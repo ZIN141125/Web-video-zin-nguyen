@@ -81,5 +81,89 @@
                     <button onclick="handleAI('translate', 'en')" class="btn btn-outline-success fw-bold">Dịch sang Tiếng Anh</button>
                     <button onclick="handleAI('tts')" class="btn btn-danger fw-bold">🔊 Chuyển thành Giọng đọc MP3</button>
                 </div>
-                
-                
+                <div id="ai-result-box" class="p-3 bg-light rounded d-none">
+                    <h6 class="fw-bold text-dark">Kết quả xử lý:</h6>
+                    <p id="ai-result-text" class="mb-0 text-secondary" style="white-space: pre-wrap;"></p>
+                    <div id="audio-player-box" class="mt-2 d-none">
+                        <audio id="audio-player" controls class="w-100"></audio>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tool-content" role="tabpanel">
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card p-3">
+                        <h4 class="fw-bold mb-3 text-secondary">Lưu liên kết công cụ</h4>
+                        <form action="/add_tool" method="POST">
+                            <div class="mb-3"><label class="form-label fw-semibold">Tên công cụ</label><input type="text" name="name" class="form-control" required placeholder="Ví dụ: ChatGPT, Canva"></div>
+                            <div class="mb-3"><label class="form-label fw-semibold">Đường dẫn URL</label><input type="url" name="url" class="form-control" required placeholder="https://..."></div>
+                            <div class="mb-3"><label class="form-label fw-semibold">Ghi chú nhanh</label><input type="text" name="note" class="form-control" placeholder="Dùng để làm gì..."></div>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold">Lưu Công Cụ</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="col-md-8">
+                    <div class="card p-3">
+                        <h4 class="fw-bold mb-3 text-secondary">Danh mục liên kết đã lưu</h4>
+                        <div class="row">
+                            {% for tool in tools %}
+                            <div class="col-md-6 mb-3">
+                                <div class="p-3 border rounded bg-light">
+                                    <h5 class="fw-bold text-dark mb-1">{{ tool.name }}</h5>
+                                    <p class="text-muted small mb-2">{{ tool.note or 'Không có ghi chú' }}</p>
+                                    <a href="{{ tool.url }}" target="_blank" class="btn btn-sm btn-primary">Truy cập ngay ➔</a>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    async function handleAI(type, lang = '') {
+        const text = document.getElementById('ai-text').value;
+        if(!text) { alert('Vui lòng nhập văn bản trước!'); return; }
+        
+        const resultBox = document.getElementById('ai-result-box');
+        const resultText = document.getElementById('ai-result-text');
+        const audioBox = document.getElementById('audio-player-box');
+        
+        resultBox.classList.remove('d-none');
+        resultText.innerText = "Đang xử lý, vui lòng đợi...";
+        audioBox.classList.add('d-none');
+
+        if (type === 'translate') {
+            const res = await fetch('/api/translate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text, lang: lang})
+            });
+            const data = await res.getJSON || await res.json();
+            if(data.success) { resultText.innerText = data.result; } 
+            else { resultText.innerText = "Lỗi hệ thống dịch: " + data.error; }
+        } else if (type === 'tts') {
+            const res = await fetch('/api/tts', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text})
+            });
+            if(res.ok) {
+                const blob = await res.blob();
+                const audioUrl = URL.createObjectURL(blob);
+                const player = document.getElementById('audio-player');
+                player.src = audioUrl;
+                resultText.innerText = "Chuyển đổi giọng nói thành công! Bạn có thể nghe hoặc tải về bên dưới:";
+                audioBox.classList.remove('d-none');
+            } else { resultText.innerText = "Lỗi khi tạo giọng nói."; }
+        }
+    }
+</script>
+</body>
+</html>
