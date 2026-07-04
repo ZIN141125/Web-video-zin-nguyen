@@ -1,10 +1,13 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
 import json
 import os
+from deep_translator import GoogleTranslator
+from gtts import gTTS
+import io
 
 app = Flask(__name__)
 
-# Hàm xử lý đọc dữ liệu từ file JSON
+# Đọc dữ liệu JSON
 def load_data():
     if not os.path.exists('data.json'):
         with open('data.json', 'w', encoding='utf-8') as f:
@@ -12,18 +15,16 @@ def load_data():
     with open('data.json', 'r', encoding='utf-8') as f:
         return json.load(f)
 
-# Hàm xử lý ghi dữ liệu vào file JSON
+# Ghi dữ liệu JSON
 def save_data(data):
     with open('data.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# Đường dẫn trang chủ hiển thị danh sách video và công cụ
 @app.route('/')
 def index():
     data = load_data()
     return render_template('index.html', videos=data['videos'], tools=data['tools'])
 
-# Đường dẫn xử lý khi thêm một video mới
 @app.route('/add_video', methods=['POST'])
 def add_video():
     data = load_data()
@@ -36,7 +37,6 @@ def add_video():
     save_data(data)
     return redirect(url_for('index'))
 
-# Đường dẫn xử lý khi thêm một công cụ mới
 @app.route('/add_tool', methods=['POST'])
 def add_tool():
     data = load_data()
@@ -48,7 +48,32 @@ def add_tool():
     save_data(data)
     return redirect(url_for('index'))
 
-# CHẠY ỨNG DỤNG - Cấu hình PORT chuẩn dành riêng cho Render
+# TÍNH NĂNG AI 1: Dịch văn bản kịch bản công nghệ AI
+@app.route('/api/translate', methods=['POST'])
+def translate_text():
+    req_data = request.get_json()
+    text = req_data.get('text', '')
+    target_lang = req_data.get('lang', 'vi') # Mặc định dịch sang tiếng Việt
+    try:
+        translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
+        return jsonify({"success": True, "result": translated})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+# TÍNH NĂNG AI 2: Chuyển kịch bản chữ thành giọng nói (.mp3)
+@app.route('/api/tts', methods=['POST'])
+def text_to_speech():
+    req_data = request.get_json()
+    text = req_data.get('text', '')
+    try:
+        tts = gTTS(text=text, lang='vi', slow=False)
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return send_file(fp, mimetype='audio/mp3', as_attachment=False)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)
