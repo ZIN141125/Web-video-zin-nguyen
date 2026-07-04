@@ -1,206 +1,54 @@
-```python
-# =========================
-# IMPORT THƯ VIỆN
-# =========================
-
-from flask import Flask, render_template, request, redirect
+from flask import Flask, render_template, request, redirect, url_for
 import json
 import os
 
-# Khởi tạo ứng dụng Flask
 app = Flask(__name__)
 
-# Tên file lưu dữ liệu
-DATA_FILE = "data.json"
-
-
-# =========================
-# HÀM KHỞI TẠO FILE JSON
-# =========================
-
-def initialize_data_file():
-    """
-    Nếu file data.json chưa tồn tại
-    thì tự động tạo file mới.
-    """
-
-    if not os.path.exists(DATA_FILE):
-
-        default_data = {
-            "videos": [],
-            "tools": []
-        }
-
-        with open(DATA_FILE, "w", encoding="utf-8") as f:
-            json.dump(
-                default_data,
-                f,
-                ensure_ascii=False,
-                indent=4
-            )
-
-
-# =========================
-# HÀM ĐỌC DỮ LIỆU JSON
-# =========================
-
+# Hàm xử lý đọc dữ liệu từ file JSON
 def load_data():
-    """
-    Đọc dữ liệu từ file JSON
-    """
+    if not os.path.exists('data.json'):
+        with open('data.json', 'w', encoding='utf-8') as f:
+            json.dump({"videos": [], "tools": []}, f)
+    with open('data.json', 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-    initialize_data_file()
-
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-
-    except Exception as e:
-
-        print("Lỗi đọc dữ liệu:", e)
-
-        return {
-            "videos": [],
-            "tools": []
-        }
-
-
-# =========================
-# HÀM GHI DỮ LIỆU JSON
-# =========================
-
+# Hàm xử lý ghi dữ liệu vào file JSON
 def save_data(data):
-    """
-    Ghi dữ liệu vào file JSON
-    """
+    with open('data.json', 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
 
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(
-            data,
-            f,
-            ensure_ascii=False,
-            indent=4
-        )
-
-
-# =========================
-# TRANG CHỦ
-# =========================
-
-@app.route("/")
+# Đường dẫn trang chủ hiển thị danh sách video và công cụ
+@app.route('/')
 def index():
-    """
-    Hiển thị giao diện chính
-    """
-
     data = load_data()
+    return render_template('index.html', videos=data['videos'], tools=data['tools'])
 
-    videos = data.get("videos", [])
-    tools = data.get("tools", [])
-
-    return render_template(
-        "index.html",
-        videos=videos,
-        tools=tools
-    )
-
-
-# =========================
-# THÊM VIDEO
-# =========================
-
-@app.route("/add_video", methods=["POST"])
+# Đường dẫn xử lý khi thêm một video mới
+@app.route('/add_video', methods=['POST'])
 def add_video():
-    """
-    Nhận dữ liệu từ form Video
-    """
-
     data = load_data()
-
-    video = {
-
-        "title": request.form.get("title", "").strip(),
-
-        "status": request.form.get(
-            "status",
-            "Ý tưởng"
-        ).strip(),
-
-        "script": request.form.get(
-            "script",
-            ""
-        ).strip(),
-
-        "drive_link": request.form.get(
-            "drive_link",
-            ""
-        ).strip()
-    }
-
-    data["videos"].append(video)
-
+    data['videos'].append({
+        "title": request.form.get('title'),
+        "status": request.form.get('status'),
+        "script": request.form.get('script'),
+        "drive_link": request.form.get('drive_link')
+    })
     save_data(data)
+    return redirect(url_for('index'))
 
-    return redirect("/")
-
-
-# =========================
-# THÊM CÔNG CỤ
-# =========================
-
-@app.route("/add_tool", methods=["POST"])
+# Đường dẫn xử lý khi thêm một công cụ mới
+@app.route('/add_tool', methods=['POST'])
 def add_tool():
-    """
-    Nhận dữ liệu từ form Công cụ
-    """
-
     data = load_data()
-
-    tool = {
-
-        "name": request.form.get(
-            "tool_name",
-            ""
-        ).strip(),
-
-        "url": request.form.get(
-            "tool_url",
-            ""
-        ).strip(),
-
-        "note": request.form.get(
-            "tool_note",
-            ""
-        ).strip()
-    }
-
-    data["tools"].append(tool)
-
+    data['tools'].append({
+        "name": request.form.get('name'),
+        "url": request.form.get('url'),
+        "note": request.form.get('note')
+    })
     save_data(data)
+    return redirect(url_for('index'))
 
-    return redirect("/")
-
-
-# =========================
-# CHẠY ỨNG DỤNG
-# =========================
-
-if __name__ == "__main__":
-
-    # Lấy PORT từ môi trường
-    # Render sẽ tự truyền biến PORT
-    port = int(
-        os.environ.get(
-            "PORT",
-            5000
-        )
-    )
-
-    # Chạy Flask
-    app.run(
-        host="0.0.0.0",
-        port=port,
-        debug=False
-    )
-```
-
+# CHẠY ỨNG DỤNG - Cấu hình PORT chuẩn dành riêng cho Render
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port, debug=False)
