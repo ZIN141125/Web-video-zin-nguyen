@@ -3,283 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Quản Lý Video & Công Cụ</title>
-
+    <title>Hệ thống Quản lý & Sáng tạo Video AI</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 20px;
-            font-family: Arial, sans-serif;
-        }
-
-        .container {
-            display: flex;
-            gap: 20px;
-            align-items: flex-start;
-        }
-
-        .column {
-            flex: 1;
-            border: 1px solid #ccc;
-            padding: 15px;
-        }
-
-        h2 {
-            margin-top: 0;
-        }
-
-        form {
-            margin-bottom: 20px;
-        }
-
-        label {
-            display: block;
-            margin-top: 10px;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-
-        input,
-        select,
-        textarea {
-            width: 100%;
-            padding: 8px;
-        }
-
-        textarea {
-            min-height: 120px;
-            resize: vertical;
-        }
-
-        button {
-            margin-top: 15px;
-            padding: 10px 15px;
-            cursor: pointer;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-
-        table,
-        th,
-        td {
-            border: 1px solid #999;
-        }
-
-        th,
-        td {
-            padding: 8px;
-            text-align: left;
-            vertical-align: top;
-        }
-
-        ul {
-            padding-left: 20px;
-        }
-
-        li {
-            margin-bottom: 10px;
-        }
-
-        .tool-note {
-            color: #666;
-            font-size: 14px;
-        }
-
-        .drive-link {
-            word-break: break-all;
-        }
+        body { background-color: #f4f6f9; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .nav-tabs .nav-link { color: #495057; font-weight: 600; border: none; padding: 12px 20px; }
+        .nav-tabs .nav-link.active { color: #0d6efd; background-color: #fff; border-bottom: 3px solid #0d6efd; }
+        .card { border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-radius: 10px; }
     </style>
 </head>
 <body>
+<div class="container py-4">
+    <header class="text-center mb-4">
+        <h1 class="fw-bold text-primary">Hệ thống Video AI của Sơn</h1>
+        <p class="text-muted">Không gian quản lý kịch bản, dịch thuật và chuyển đổi giọng nói khoa học</p>
+    </header>
 
-    <h1>Hệ Thống Quản Lý Video Và Công Cụ</h1>
+    <ul class="nav nav-tabs mb-4 justify-content-center" id="myTab" role="tablist">
+        <li class="nav-item">
+            <button class="nav-link active" id="video-tab" data-bs-toggle="tab" data-bs-target="#video-content" type="button">🎬 Quản lý Sản xuất Video</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-content" type="button">🚀 Xưởng Công cụ AI (Dịch & Giọng Nói)</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link" id="tool-tab" data-bs-toggle="tab" data-bs-target="#tool-content" type="button">🧰 Hộp Tài nguyên & Link</button>
+        </li>
+    </ul>
 
-    <div class="container">
-
-        <!-- CỘT TRÁI -->
-        <div class="column">
-
-            <h2>Quản Lý Video</h2>
-
-            <form action="/add_video" method="POST">
-
-                <label for="title">Tên video / Ý tưởng</label>
-                <input
-                    type="text"
-                    id="title"
-                    name="title"
-                    required
-                >
-
-                <label for="status">Trạng thái</label>
-                <select
-                    id="status"
-                    name="status"
-                >
-                    <option value="Ý tưởng">Ý tưởng</option>
-                    <option value="Đang viết kịch bản">Đang viết kịch bản</option>
-                    <option value="Đang dựng">Đang dựng</option>
-                    <option value="Đã xong">Đã xong</option>
-                </select>
-
-                <label for="script">
-                    Kịch bản chữ hoặc Prompt AI
-                </label>
-                <textarea
-                    id="script"
-                    name="script"
-                ></textarea>
-
-                <label for="drive_link">
-                    Link Google Drive
-                </label>
-                <input
-                    type="url"
-                    id="drive_link"
-                    name="drive_link"
-                >
-
-                <button type="submit">
-                    Lưu Video
-                </button>
-
-            </form>
-
-            <hr>
-
-            <h3>Danh Sách Video</h3>
-
-            <table>
-                <thead>
-                    <tr>
-                        <th>Tên Video</th>
-                        <th>Trạng Thái</th>
-                        <th>Kịch Bản / Prompt</th>
-                        <th>Google Drive</th>
-                    </tr>
-                </thead>
-
-                <tbody>
-
-                    {% for video in videos %}
-                    <tr>
-
-                        <td>
-                            {{ video.title }}
-                        </td>
-
-                        <td>
-                            {{ video.status }}
-                        </td>
-
-                        <td>
-                            {{ video.script }}
-                        </td>
-
-                        <td class="drive-link">
-
-                            {% if video.drive_link %}
-                            <a
-                                href="{{ video.drive_link }}"
-                                target="_blank"
-                            >
-                                Mở Drive
-                            </a>
-                            {% else %}
-                            -
-                            {% endif %}
-
-                        </td>
-
-                    </tr>
-                    {% endfor %}
-
-                </tbody>
-            </table>
-
-        </div>
-
-        <!-- CỘT PHẢI -->
-        <div class="column">
-
-            <h2>Hộp Công Cụ</h2>
-
-            <form action="/add_tool" method="POST">
-
-                <label for="tool_name">
-                    Tên công cụ
-                </label>
-
-                <input
-                    type="text"
-                    id="tool_name"
-                    name="tool_name"
-                    required
-                >
-
-                <label for="tool_url">
-                    Đường link (URL) của công cụ
-                </label>
-
-                <input
-                    type="url"
-                    id="tool_url"
-                    name="tool_url"
-                    required
-                >
-
-                <label for="tool_note">
-                    Ghi chú nhanh
-                </label>
-
-                <textarea
-                    id="tool_note"
-                    name="tool_note"
-                ></textarea>
-
-                <button type="submit">
-                    Lưu Công Cụ
-                </button>
-
-            </form>
-
-            <hr>
-
-            <h3>Danh Sách Công Cụ</h3>
-
-            <ul>
-
-                {% for tool in tools %}
-                <li>
-
-                    <a
-                        href="{{ tool.url }}"
-                        target="_blank"
-                    >
-                        {{ tool.name }}
-                    </a>
-
-                    {% if tool.note %}
-                    <div class="tool-note">
-                        {{ tool.note }}
+    <div class="tab-content" id="myTabContent">
+        <div class="tab-pane fade show active" id="video-content" role="tabpanel">
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <div class="card p-3">
+                        <h4 class="fw-bold mb-3 text-secondary">Thêm Dự án Video</h4>
+                        <form action="/add_video" method="POST">
+                            <div class="mb-3"><label class="form-label fw-semibold">Tiêu đề Video</label><input type="text" name="title" class="form-control" required></div>
+                            <div class="mb-3"><label class="form-label fw-semibold">Trạng thái</label><select name="status" class="form-control"><option>Ý tưởng</option><option>Đang viết kịch bản</option><option>Đang dựng</option><option>Đã hoàn thành</option></select></div>
+                            <div class="mb-3"><label class="form-label fw-semibold">Kịch bản chữ / Prompt AI</label><textarea name="script" class="form-control" rows="3"></textarea></div>
+                            <div class="mb-3"><label class="form-label fw-semibold">Link Google Drive</label><input type="url" name="drive_link" class="form-control"></div>
+                            <button type="submit" class="btn btn-primary w-100 fw-bold">Lưu Dự Án</button>
+                        </form>
                     </div>
-                    {% endif %}
-
-                </li>
-                {% endfor %}
-
-            </ul>
-
+                </div>
+                <div class="col-md-8">
+                    <div class="card p-3">
+                        <h4 class="fw-bold mb-3 text-secondary">Danh sách Tiến độ Video</h4>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-light"><tr><th>Tiêu đề</th><th>Trạng thái</th><th>Kịch bản</th><th>Drive</th></tr></thead>
+                                <tbody>
+                                    {% for video in videos %}
+                                    <tr>
+                                        <td class="fw-bold">{{ video.title }}</td>
+                                        <td><span class="badge {% if video.status=='Đã hoàn thành' %}bg-success{% elif video.status=='Đang dựng' %}bg-warning text-dark{% else %}bg-info text-dark{% endif %}">{{ video.status }}</span></td>
+                                        <td><small class="text-truncate d-inline-block" style="max-width: 150px;">{{ video.script }}</small></td>
+                                        <td>{% if video.drive_link %}<a href="{{ video.drive_link }}" target="_blank" class="btn btn-sm btn-outline-danger">Mở Drive</a>{% else %}-{% endif %}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-    </div>
-
-</body>
-</html>
+        <div class="tab-pane fade" id="ai-content" role="tabpanel">
+            <div class="card p-4">
+                <h4 class="fw-bold text-secondary mb-3">Trợ lý Kịch bản Đa năng (AI Studio)</h4>
+                <div class="mb-3">
+                    <label class="form-label fw-semibold">Nhập đoạn kịch bản hoặc văn bản cần xử lý:</label>
+                    <textarea id="ai-text" class="form-control" rows="5" placeholder="Nhập chữ tiếng Việt hoặc tiếng nước ngoài vào đây..."></textarea>
+                </div>
+                <div class="d-flex gap-2 mb-4">
+                    <button onclick="handleAI('translate', 'vi')" class="btn btn-success fw-bold">Dịch sang Tiếng Việt</button>
+                    <button onclick="handleAI('translate', 'en')" class="btn btn-outline-success fw-bold">Dịch sang Tiếng Anh</button>
+                    <button onclick="handleAI('tts')" class="btn btn-danger fw-bold">🔊 Chuyển thành Giọng đọc MP3</button>
+                </div>
+                
+                
