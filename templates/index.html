@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Quản Lý Video & Công Cụ</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 20px;
+            font-family: Arial, sans-serif;
+        }
+
+        .container {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+
+        .column {
+            flex: 1;
+            border: 1px solid #ccc;
+            padding: 15px;
+        }
+
+        h2 {
+            margin-top: 0;
+        }
+
+        form {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input,
+        select,
+        textarea {
+            width: 100%;
+            padding: 8px;
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        button {
+            margin-top: 15px;
+            padding: 10px 15px;
+            cursor: pointer;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+
+        table,
+        th,
+        td {
+            border: 1px solid #999;
+        }
+
+        th,
+        td {
+            padding: 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        ul {
+            padding-left: 20px;
+        }
+
+        li {
+            margin-bottom: 10px;
+        }
+
+        .tool-note {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .drive-link {
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Hệ Thống Quản Lý Video Và Công Cụ</h1>
+
+    <div class="container">
+
+        <!-- CỘT TRÁI -->
+        <div class="column">
+
+            <h2>Quản Lý Video</h2>
+
+            <form action="/add_video" method="POST">
+
+                <label for="title">Tên video / Ý tưởng</label>
+                <input
+                    type="text"
+                    id="title"
+                    name="title"
+                    required
+                >
+
+                <label for="status">Trạng thái</label>
+                <select
+                    id="status"
+                    name="status"
+                >
+                    <option value="Ý tưởng">Ý tưởng</option>
+                    <option value="Đang viết kịch bản">Đang viết kịch bản</option>
+                    <option value="Đang dựng">Đang dựng</option>
+                    <option value="Đã xong">Đã xong</option>
+                </select>
+
+                <label for="script">
+                    Kịch bản chữ hoặc Prompt AI
+                </label>
+                <textarea
+                    id="script"
+                    name="script"
+                ></textarea>
+
+                <label for="drive_link">
+                    Link Google Drive
+                </label>
+                <input
+                    type="url"
+                    id="drive_link"
+                    name="drive_link"
+                >
+
+                <button type="submit">
+                    Lưu Video
+                </button>
+
+            </form>
+
+            <hr>
+
+            <h3>Danh Sách Video</h3>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Tên Video</th>
+                        <th>Trạng Thái</th>
+                        <th>Kịch Bản / Prompt</th>
+                        <th>Google Drive</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for video in videos %}
+                    <tr>
+
+                        <td>
+                            {{ video.title }}
+                        </td>
+
+                        <td>
+                            {{ video.status }}
+                        </td>
+
+                        <td>
+                            {{ video.script }}
+                        </td>
+
+                        <td class="drive-link">
+
+                            {% if video.drive_link %}
+                            <a
+                                href="{{ video.drive_link }}"
+                                target="_blank"
+                            >
+                                Mở Drive
+                            </a>
+                            {% else %}
+                            -
+                            {% endif %}
+
+                        </td>
+
+                    </tr>
+                    {% endfor %}
+
+                </tbody>
+            </table>
+
+        </div>
+
+        <!-- CỘT PHẢI -->
+        <div class="column">
+
+            <h2>Hộp Công Cụ</h2>
+
+            <form action="/add_tool" method="POST">
+
+                <label for="tool_name">
+                    Tên công cụ
+                </label>
+
+                <input
+                    type="text"
+                    id="tool_name"
+                    name="tool_name"
+                    required
+                >
+
+                <label for="tool_url">
+                    Đường link (URL) của công cụ
+                </label>
+
+                <input
+                    type="url"
+                    id="tool_url"
+                    name="tool_url"
+                    required
+                >
+
+                <label for="tool_note">
+                    Ghi chú nhanh
+                </label>
+
+                <textarea
+                    id="tool_note"
+                    name="tool_note"
+                ></textarea>
+
+                <button type="submit">
+                    Lưu Công Cụ
+                </button>
+
+            </form>
+
+            <hr>
+
+            <h3>Danh Sách Công Cụ</h3>
+
+            <ul>
+
+                {% for tool in tools %}
+                <li>
+
+                    <a
+                        href="{{ tool.url }}"
+                        target="_blank"
+                    >
+                        {{ tool.name }}
+                    </a>
+
+                    {% if tool.note %}
+                    <div class="tool-note">
+                        {{ tool.note }}
+                    </div>
+                    {% endif %}
+
+                </li>
+                {% endfor %}
+
+            </ul>
+
+        </div>
+
+    </div>
+
+</body>
+</html>
