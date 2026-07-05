@@ -19,10 +19,6 @@
     {% if show_login %}
     <div class="card p-4 login-container">
         {% if is_register %}
-        <div class="mb-3">
-    <label class="form-label fw-bold">Xác nhận mật khẩu</label>
-    <input type="password" name="confirm_password" class="form-control" placeholder="Nhập lại mật khẩu để xác nhận..." required>
-</div>
             <h3 class="fw-bold text-center text-success mb-3">📝 ĐĂNG KÝ TÀI KHOẢN</h3>
             <p class="text-muted text-center small">Tạo tài khoản cá nhân để quản lý dự án video của bạn</p>
         {% else %}
@@ -46,20 +42,30 @@
                 <label class="form-label fw-semibold">Mật khẩu</label>
                 <input type="password" name="password" class="form-control" placeholder="Nhập mật khẩu..." required>
             </div>
+            
+            {# 🔑 TÍNH NĂNG 1: THÊM Ô XÁC NHẬN MẬT KHẨU VÀO ĐÚNG FORM ĐĂNG KÝ #}
+            {% if is_register %}
+            <div class="mb-3">
+                <label class="form-label fw-semibold text-success">Xác nhận mật khẩu</label>
+                <input type="password" name="confirm_password" class="form-control" placeholder="Nhập lại mật khẩu để xác nhận..." required>
+            </div>
+            {% endif %}
+            
             <button type="submit" class="btn {{ 'btn-success' if is_register else 'btn-primary' }} w-100 fw-bold py-2">
                 {{ 'Đăng Ký Ngay ➔' if is_register else 'Vào Hệ Thống ➔' }}
             </button>
         </form>
+        
         <div style="text-align: center; margin: 15px 0; color: #888; font-size: 14px;">
-    <span>hoặc</span>
-</div>
+            <span>hoặc</span>
+        </div>
 
-<div style="text-align: center; margin-bottom: 15px;">
-    <a href="/login/google" style="display: inline-flex; align-items: center; justify-content: center; background-color: #fff; color: #3c4043; border: 1px solid #dadce0; padding: 10px 20px; border-radius: 4px; font-family: 'Roboto', sans-serif; font-size: 14px; font-weight: 500; text-decoration: none; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: background-color 0.2s; width: 100%; box-sizing: border-box;">
-        <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google logo" style="width: 18px; height: 18px; margin-right: 10px;">
-        Đăng nhập bằng Google
-    </a>
-</div>
+        <div style="text-align: center; margin-bottom: 15px;">
+            <a href="/login/google" style="display: inline-flex; align-items: center; justify-content: center; background-color: #fff; color: #3c4043; border: 1px solid #dadce0; padding: 10px 20px; border-radius: 4px; font-family: 'Roboto', sans-serif; font-size: 14px; font-weight: 500; text-decoration: none; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: background-color 0.2s; width: 100%; box-sizing: border-box;">
+                <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google logo" style="width: 18px; height: 18px; margin-right: 10px;">
+                Đăng nhập bằng Google
+            </a>
+        </div>
         
         <div class="text-center mt-3">
             {% if is_register %}
@@ -132,19 +138,49 @@
         <div class="tab-pane fade" id="ai-content" role="tabpanel">
             <div class="card p-4">
                 <h4 class="fw-bold text-secondary mb-3">Trợ lý Kịch bản Đa năng (AI Studio)</h4>
+                
                 <div class="mb-3">
-                    <label class="form-label fw-semibold">Nhập đoạn kịch bản hoặc văn bản cần xử lý:</label>
-                    <textarea id="ai-text" class="form-control" rows="5" placeholder="Nhập chữ tiếng Việt hoặc tiếng nước ngoài vào đây..."></textarea>
+                    <label class="form-label fw-semibold">Nhập đoạn kịch bản hoặc văn bản cần xử lý (Tối đa 5000 từ):</label>
+                    <textarea id="ai-text" class="form-control" rows="6" placeholder="Nhập chữ tiếng Việt hoặc tiếng nước ngoài vào đây để dịch thuật hoặc chuyển thành giọng nói..."></textarea>
                 </div>
+                
+                <div class="row mb-4 g-3">
+                    {# 🌐 TÍNH NĂNG 2: HỘP CHỌN ĐA DẠNG NGÔN NGỮ DỊCH THUẬT #}
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-success">🎯 Chọn Ngôn ngữ đích cần dịch:</label>
+                        <select id="translate-lang" class="form-select border-success">
+                            <option value="vi" selected>Tiếng Việt 🇻🇳</option>
+                            <option value="en">Tiếng Anh (English) 🇺🇸</option>
+                            <option value="zh-CN">Tiếng Trung Giản thể (Chinese) 🇨🇳</option>
+                            <option value="ja">Tiếng Nhật (Japanese) 🇯🇵</option>
+                            <option value="ko">Tiếng Hàn (Korean) 🇰🇷</option>
+                            <option value="fr">Tiếng Pháp (French) 🇫🇷</option>
+                            <option value="ru">Tiếng Nga (Russian) 🇷🇺</option>
+                            <option value="th">Tiếng Thái (Thai) 🇹🇭</option>
+                        </select>
+                    </div>
+                    
+                    {# 🎙️ TÍNH NĂNG 3: HỘP CHỌN GIỌNG ĐỌC AI CON NGƯỜI SIÊU THẬT #}
+                    <div class="col-md-6">
+                        <label class="form-label fw-bold text-danger">🎙️ Chọn Giọng đọc AI nâng cao (Edge-TTS):</label>
+                        <select id="tts-voice" class="form-select border-danger">
+                            <option value="vi-VN-HoaiNamNeural" selected>Nam - Hoài Nam (Giọng đọc truyện, tin tức cực hay)</option>
+                            <option value="vi-VN-NamMinhNeural">Nam - Nam Minh (Giọng ấm áp, chuẩn phổ thông)</option>
+                            <option value="vi-VN-MaiPhuongNeural">Nữ - Mai Phương (Giọng nhẹ nhàng, truyền cảm)</option>
+                        </select>
+                    </div>
+                </div>
+                
                 <div class="d-flex gap-2 mb-4">
-                    <button onclick="handleAI('translate', 'vi')" class="btn btn-success fw-bold">Dịch sang Tiếng Việt</button>
-                    <button onclick="handleAI('translate', 'en')" class="btn btn-outline-success fw-bold">Dịch sang Tiếng Anh</button>
-                    <button onclick="handleAI('tts')" class="btn btn-danger fw-bold">🔊 Chuyển thành Giọng đọc MP3</button>
+                    <button onclick="executeTranslate()" class="btn btn-success fw-bold px-4">🌐 Tiến Hành Dịch Thuật</button>
+                    <button id="btn-tts" onclick="executeTTS()" class="btn btn-danger fw-bold px-4">🔊 Chuyển Thành Giọng Đọc MP3</button>
                 </div>
-                <div id="ai-result-box" class="p-3 bg-light rounded d-none">
-                    <h6 class="fw-bold text-dark">Kết quả xử lý:</h6>
+                
+                <div id="ai-result-box" class="p-3 bg-light rounded d-none border">
+                    <h6 class="fw-bold text-dark">Kết quả xử lý từ Hệ thống AI:</h6>
                     <p id="ai-result-text" class="mb-0 text-secondary" style="white-space: pre-wrap;"></p>
-                    <div id="audio-player-box" class="mt-2 d-none">
+                    <div id="audio-player-box" class="mt-3 d-none">
+                        <label class="form-label fw-bold text-danger">Trình phát Audio AI của bạn (Có thể tải xuống):</label>
                         <audio id="audio-player" controls class="w-100"></audio>
                     </div>
                 </div>
@@ -158,7 +194,7 @@
                         <h4 class="fw-bold mb-3 text-secondary">Lưu liên kết công cụ</h4>
                         <form action="/add_tool" method="POST">
                             <div class="mb-3"><label class="form-label fw-semibold">Tên công cụ</label><input type="text" name="name" class="form-control" required placeholder="Ví dụ: ChatGPT, Canva"></div>
-                            <div class="mb-3"><label class="form-label fw-semibold">Đường dẫn URL</label><input type="url" name="url" class="form-control" required placeholder="https://..."></div>
+                            <div class="mb-3"><label class="form-url fw-semibold">Đường dẫn URL</label><input type="url" name="url" class="form-control" required placeholder="https://..."></div>
                             <div class="mb-3"><label class="form-label fw-semibold">Ghi chú nhanh</label><input type="text" name="note" class="form-control" placeholder="Dùng để làm gì..."></div>
                             <button type="submit" class="btn btn-primary w-100 fw-bold">Lưu Công Cụ</button>
                         </form>
@@ -188,8 +224,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    async function handleAI(type, lang = '') {
-        const text = document.getElementById('ai-text').value;
+    // 🌐 Hàm xử lý Dịch thuật Đa Ngôn ngữ động
+    async function executeTranslate() {
+        const text = document.getElementById('ai-text').value.strip ? document.getElementById('ai-text').value.strip() : document.getElementById('ai-text').value;
+        const targetLang = document.getElementById('translate-lang').value;
+        
         if(!text) { alert('Vui lòng nhập văn bản trước!'); return; }
         
         const resultBox = document.getElementById('ai-result-box');
@@ -197,32 +236,67 @@
         const audioBox = document.getElementById('audio-player-box');
         
         resultBox.classList.remove('d-none');
-        resultText.innerText = "Đang xử lý, vui lòng đợi...";
+        resultText.innerText = "⏳ Hệ thống dịch thuật đang xử lý dữ liệu đa ngôn ngữ...";
         audioBox.classList.add('d-none');
 
-        if (type === 'translate') {
+        try {
             const res = await fetch('/api/translate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text: text, lang: lang})
+                body: JSON.stringify({text: text, lang: targetLang})
             });
             const data = await res.json();
-            if(data.success) { resultText.innerText = data.result; } 
-            else { resultText.innerText = "Lỗi hệ thống dịch: " + data.error; }
-        } else if (type === 'tts') {
+            if(data.success) { 
+                resultText.innerText = data.result; 
+            } else { 
+                resultText.innerText = "❌ Lỗi hệ thống dịch: " + data.error; 
+            }
+        } catch(e) {
+            resultText.innerText = "❌ Không thể kết nối đến máy chủ dịch thuật.";
+        }
+    }
+
+    // 🎙️ Hàm xử lý Chuyển văn bản dài (3000-5000 từ) thành Giọng đọc AI nâng cao siêu tốc
+    async function executeTTS() {
+        const text = document.getElementById('ai-text').value;
+        const selectedVoice = document.getElementById('tts-voice').value;
+        const btnTts = document.getElementById('btn-tts');
+        
+        if(!text) { alert('Vui lòng nhập văn bản trước!'); return; }
+        
+        const resultBox = document.getElementById('ai-result-box');
+        const resultText = document.getElementById('ai-result-text');
+        const audioBox = document.getElementById('audio-player-box');
+        
+        resultBox.classList.remove('d-none');
+        resultText.innerText = "⏳ Trợ lý AI đang tạo giọng đọc siêu tốc cho đoạn kịch bản dài của bạn, vui lòng đợi một lát...";
+        audioBox.classList.add('d-none');
+        btnTts.disabled = true;
+        btnTts.innerText = "⏳ Đang kết xuất Audio...";
+
+        try {
             const res = await fetch('/api/tts', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text: text})
+                body: JSON.stringify({text: text, voice: selectedVoice})
             });
+            
             if(res.ok) {
                 const blob = await res.blob();
                 const audioUrl = URL.createObjectURL(blob);
                 const player = document.getElementById('audio-player');
                 player.src = audioUrl;
-                resultText.innerText = "Chuyển đổi giọng nói thành công! Bạn có thể nghe hoặc tải về bên dưới:";
+                resultText.innerText = "🎉 Chuyển đổi giọng nói AI giống người thật thành công! Bạn có thể bật nghe thử hoặc bấm chuột phải/click dấu 3 chấm để tải file MP3 về máy:";
                 audioBox.classList.remove('d-none');
-            } else { resultText.innerText = "Lỗi khi tạo giọng nói."; }
+                player.play(); // Tự động phát nhạc khi tải xong
+            } else { 
+                resultText.innerText = "❌ Lỗi khi kết nối với API Edge-TTS để tạo giọng nói."; 
+            }
+        } catch(e) {
+            resultText.innerText = "❌ Lỗi hệ thống ngắt kết nối ngầm khi tạo file âm thanh.";
+        } finally {
+            btnTts.disabled = false;
+            btnTts.innerText = "🔊 Chuyển thành Giọng đọc MP3";
         }
     }
 </script>
