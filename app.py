@@ -3,7 +3,7 @@ import json
 import io
 import asyncio
 import re
-import threading  # <--- Thêm thư viện xử lý đa luồng độc lập để tránh block server
+import threading  # <--- Thêm thư viện xử lý đa luồng độc lập để cách ly tiến trình asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
@@ -132,7 +132,8 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ ROUTE API TTS ĐÃ ĐƯỢC CHỈNH SỬA CHẠY TRÊN LUỒNG CÁCH LY AN TOÀN
+
+# 🎙️ ROUTE API TTS CHIA ĐOẠN ĐỘC LẬP - TỐI ƯU CHO KỊCH BẢN TRÊN 3000 TỪ & GIỌNG ĐỌC DÀI
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -141,54 +142,99 @@ def text_to_speech():
     try:
         req_data = request.get_json() or {}
         raw_text = req_data.get('text', '')
-        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural') # Nhận cấu hình giọng chọn từ giao diện
+        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural')
         
-        # 🧼 BẢO VỆ BACKEND: Lọc bỏ dòng trống và các dòng gạch phân tách kịch bản rác (---, ***, v.v.)
+        # 🧼 Bước 1: Làm sạch văn bản kịch bản đầu vào
         clean_lines = []
         for line in raw_text.split('\n'):
             line_str = line.strip()
             if line_str and not re.match(r'^[-\*_ ]+$', line_str):
                 clean_lines.append(line_str)
         
-        text = "\n".join(clean_lines).strip()
+        full_text = " ".join(clean_lines).strip()
+        if not full_text:
+            return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc không hợp lệ!"})
+
+        # 🧩 Bước 2: Chia nhỏ kịch bản dài thành các đoạn an toàn (~200-250 từ/đoạn) dựa trên dấu ngắt câu
+        words = full_text.split()
+        chunks = []
+        current_chunk = []
+        current_word_count = 0
         
-        if not text:
-            return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc chứa ký tự rác không hợp lệ!"})
-            
-        # Xác định tên file đầu ra dựa trên tài khoản để tránh ghi đè chéo
+        for word in words:
+            current_chunk.append(word)
+            current_word_count += 1
+            # Khi đoạn đạt từ 200 từ trở lên và kết thúc bằng một dấu ngắt câu, tiến hành tách đoạn
+            if current_word_count >= 200 and word.endswith(('.', '!', '?', ':', ';', ',', '\"', '»')):
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_word_count = 0
+        
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+
+        # Cấu hình file đích cố định theo tài khoản người dùng
         safe_username = "".join([c for c in session['username'] if c.isalnum()])
-        filename = f"audio_{safe_username}.mp3"
-        output_path = os.path.join(STATIC_AUDIO_FOLDER, filename)
-        
-        # Hàm Worker độc lập: Tự cấp một Event Loop mới hoàn toàn để tải âm thanh từ Microsoft
-        def run_async_tts():
+        final_filename = f"audio_{safe_username}.mp3"
+        final_output_path = os.path.join(STATIC_AUDIO_FOLDER, final_filename)
+
+        # 🔄 Bước 3: Hàm Worker tải luồng dữ liệu nhị phân song song/nối tiếp và gộp trực tiếp trên RAM
+        def run_split_tts():
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
+            
             try:
-                communicate = edge_tts.Communicate(text, voice)
-                new_loop.run_until_complete(communicate.save(output_path))
+                combined_audio_data = bytearray()
+                
+                async def fetch_chunks():
+                    nonlocal combined_audio_data
+                    for chunk_text in chunks:
+                        communicate = edge_tts.Communicate(chunk_text, voice)
+                        chunk_bytes = bytearray()
+                        
+                        # Đọc trực tiếp luồng byte dữ liệu thô (audio chunk bytes) truyền về từ Microsoft
+                        async for chunk in communicate.stream():
+                            if chunk["type"] == "audio":
+                                chunk_bytes.extend(chunk["data"])
+                        
+                        # Gộp dữ liệu âm thanh phân đoạn nối tiếp nhau vào mảng RAM chung
+                        combined_audio_data.extend(chunk_bytes)
+                
+                new_loop.run_until_complete(fetch_chunks())
+                
+                # Ghi một lần duy nhất toàn bộ khối dữ liệu tổng hợp xuống file MP3
+                if combined_audio_data:
+                    with open(final_output_path, "wb") as f:
+                        f.write(combined_audio_data)
+                        
             finally:
                 new_loop.close()
 
-        # Khởi chạy tiểu trình độc lập (Thread) cách ly hoàn toàn với luồng xử lý chính của WSGI/Render
-        tts_thread = threading.Thread(target=run_async_tts)
+        # Thực thi trong một tiểu trình (Thread) độc lập để tránh block tiến trình chính của server Render
+        tts_thread = threading.Thread(target=run_split_tts)
         tts_thread.start()
-        tts_thread.join() # Ép tiến trình Flask đợi cho đến khi Thread này ghi xong file âm thanh mới đi tiếp
+        tts_thread.join(timeout=300) # Nâng thời gian chờ tối đa lên 5 phút cho kịch bản siêu dài
 
-        # Kiểm tra sự tồn tại và dung lượng file sau khi tiểu trình chạy xong
-        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-            return jsonify({"success": False, "error": "Hệ thống Edge-TTS không tải được dữ liệu âm thanh. Vui lòng kiểm tra lại đường truyền hoặc kịch bản."})
+        # Kiểm tra tính toàn vẹn và dung lượng thực tế của file MP3 đầu ra
+        if not os.path.exists(final_output_path) or os.path.getsize(final_output_path) == 0:
+            if os.path.exists(final_output_path):
+                os.remove(final_output_path)
+            return jsonify({
+                "success": False, 
+                "error": "Không thể kết xuất dữ liệu âm thanh kịch bản dài. Server Microsoft TTS từ chối kết nối. Hãy thử lại sau vài giây hoặc đổi sang giọng đọc khác!"
+            })
 
-        # Trả về tín hiệu thành công kèm URL dẫn đến file audio tĩnh
+        # Trả về URL dẫn đến file audio tĩnh kèm token thời gian thực (mtime) để buộc trình duyệt xóa cache file cũ
         return jsonify({
             "success": True, 
-            "text": text,
-            "audio_url": f"/static/audio/{filename}"
+            "text": f"Đã xử lý thành công {len(chunks)} phân đoạn kịch bản dài.",
+            "audio_url": f"/static/audio/{final_filename}?v={os.path.getmtime(final_output_path)}"
         })
         
     except Exception as e:
-        print(f"Lỗi hệ thống kết xuất âm thanh: {e}")
+        print(f"Lỗi hệ thống kết xuất âm thanh kịch bản dài: {e}")
         return jsonify({"success": False, "error": str(e)})
+
 
 # Route để cấu hình Flask trả về file MP3 trong thư mục tĩnh static/audio/
 @app.route('/static/audio/<filename>')
