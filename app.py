@@ -2,12 +2,17 @@ import os
 import json
 import io
 import asyncio
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
+import edge_tts  # <--- Thêm thư viện edge-tts xử lý giọng đọc con người
 
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
+
+# 📂 CẤU HÌNH THƯ MỤC LƯU TRỮ AUDIO MP3 TĨNH
+STATIC_AUDIO_FOLDER = os.path.join(os.getcwd(), 'static', 'audio')
+os.makedirs(STATIC_AUDIO_FOLDER, exist_ok=True)
 
 # 🔑 CẤU HÌNH GOOGLE OAUTH
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
@@ -125,20 +130,48 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ API TTS ĐÃ SỬA THEO BƯỚC 1 PHƯƠNG ÁN 2: THU GỌN VÀ CHUYỂN DỮ LIỆU SẠCH XỬ LÝ Ở FRONT-END
+# 🎙️ BƯỚC 1: ROUTE API TTS ĐÃ ĐƯỢC CHỈNH SỬA TOÀN DIỆN VÀ CHẠY ỔN ĐỊNH
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
-        return jsonify({"success": False, "error": "Chưa đăng nhập"})
+        return jsonify({"success": False, "error": "Chưa đăng nhập hệ thống!"})
     
-    req_data = request.get_json()
-    text = req_data.get('text', '').strip()
-    
-    if not text:
-        return jsonify({"success": False, "error": "Văn bản trống"})
+    try:
+        req_data = request.get_json() or {}
+        text = req_data.get('text', '').strip()
+        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural') # Nhận cấu hình giọng chọn từ giao diện
         
-    # Trả trực tiếp chuỗi văn bản kịch bản về cho Trình duyệt của Client tự xử lý đọc bằng Web Speech API
-    return jsonify({"success": True, "text": text})
+        if not text:
+            return jsonify({"success": False, "error": "Văn bản kịch bản trống!"})
+            
+        # Xác định tên file đầu ra dựa trên tài khoản để tránh ghi đè dồn dập giữa các phiên làm việc
+        safe_username = "".join([c for c in session['username'] if c.isalnum()])
+        filename = f"audio_{safe_username}.mp3"
+        output_path = os.path.join(STATIC_AUDIO_FOLDER, filename)
+        
+        # Hàm xử lý chuyển đổi đồng bộ bất tuần tự của thư viện Edge-TTS
+        async def generate_voice_file():
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(output_path)
+            
+        # Kích hoạt luồng chạy không chặn trong môi trường nền Python
+        asyncio.run(generate_voice_file())
+        
+        # Trả về tín hiệu thành công kèm URL tĩnh dẫn đến file audio
+        return jsonify({
+            "success": True, 
+            "text": text,
+            "audio_url": f"/static/audio/{filename}"
+        })
+        
+    except Exception as e:
+        print(f"Lỗi hệ thống kết xuất âm thanh: {e}")
+        return jsonify({"success": False, "error": str(e)})
+
+# Route để cấu hình Flask trả về file MP3 trong thư mục tĩnh static/audio/
+@app.route('/static/audio/<filename>')
+def serve_audio(filename):
+    return send_from_directory(STATIC_AUDIO_FOLDER, filename)
 
 # 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ LINH HOẠT ĐA CHIỀU
 @app.route('/api/translate', methods=['POST'])
