@@ -11,6 +11,7 @@
         .nav-tabs .nav-link.active { color: #0d6efd; background-color: #fff; border-bottom: 3px solid #0d6efd; }
         .card { border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-radius: 10px; }
         .login-container { max-width: 400px; margin: 80px auto; }
+        .progress { height: 8px; border-radius: 4px; overflow: hidden; }
     </style>
 </head>
 <body>
@@ -182,6 +183,16 @@
                     <button onclick="executeTranslate()" class="btn btn-success fw-bold px-4">🌐 Tiến Hành Dịch Thuật</button>
                     <button id="btn-tts" onclick="executeTTS()" class="btn btn-danger fw-bold px-4">🔊 Chuyển Thành Giọng Đọc MP3</button>
                 </div>
+
+                <div id="progress-box" class="mb-3 d-none">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span class="small fw-bold text-secondary" id="progress-status">Đang phân tích kịch bản...</span>
+                        <span class="small fw-bold text-primary" id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress">
+                        <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated bg-danger" role="progressbar" style="width: 0%"></div>
+                    </div>
+                </div>
                 
                 <div id="ai-result-box" class="p-3 bg-light rounded d-none border">
                     <h6 class="fw-bold text-dark">Kết quả xử lý từ Hệ thống AI:</h6>
@@ -233,7 +244,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // 🌐 Hàm xử lý Dịch thuật Đa Ngôn ngữ động
     async function executeTranslate() {
         const rawText = document.getElementById('ai-text').value;
         const text = rawText && rawText.trim ? rawText.trim() : rawText;
@@ -265,23 +275,18 @@
         }
     }
 
-    // 🎙️ VÁ LỖI HOÀN CHỈNH: HÀM TTS TỰ ĐỘNG LỌC BỎ KÝ TỰ ĐẶC BIỆT (---) TRƯỚC KHI GỬI LÊN BACKEND
+    // 🎙️ THUẬT TOÁN FRONT-END MỚI: CHỐNG TIMEOUT CHO KỊCH BẢN 2000 TỪ
     async function executeTTS() {
         const rawText = document.getElementById('ai-text').value;
         if(!rawText || !rawText.trim()) { alert('Vui lòng nhập văn bản trước!'); return; }
         
-        // 🌟 BỘ LỌC FRONT-END: Tách dòng, bỏ qua các dòng trống hoặc dòng chứa toàn dấu gạch rác (---, ***, ___)
+        // 🧼 Làm sạch và bóc tách dữ liệu
         const cleanLines = rawText.split('\n')
             .map(line => line.trim())
             .filter(line => line.length > 0 && !/^[-\*_ ]+$/.test(line));
             
-        // Ghép lại thành văn bản sạch hoàn toàn để truyền tải lên máy chủ
-        const cleanText = cleanLines.join('\n');
-        
-        if(!cleanText) { 
-            alert('Kịch bản không chứa văn bản hợp lệ để đọc (chỉ có các ký tự phân tách kịch bản)!'); 
-            return; 
-        }
+        const fullCleanText = cleanLines.join(' ');
+        if(!fullCleanText) { alert('Kịch bản không chứa ký tự hợp lệ!'); return; }
 
         const selectedVoice = document.getElementById('tts-voice').value;
         const btnTts = document.getElementById('btn-tts');
@@ -289,45 +294,101 @@
         const resultText = document.getElementById('ai-result-text');
         const audioBox = document.getElementById('audio-player-box');
         
+        // Cấu hình hiển thị Progress Bar
+        const progressBox = document.getElementById('progress-box');
+        const progressBar = document.getElementById('progress-bar');
+        const progressStatus = document.getElementById('progress-status');
+        const progressPercent = document.getElementById('progress-percent');
+
         resultBox.classList.remove('d-none');
-        resultText.innerText = "⏳ Hệ thống đang lọc sạch kịch bản và chuyển mã sang giọng nói AI, vui lòng đợi...";
         audioBox.classList.add('d-none');
+        progressBox.classList.remove('d-none');
+        
         btnTts.disabled = true;
-        btnTts.innerText = "⏳ Đang kết xuất Audio...";
+        btnTts.innerText = "⏳ Đang đồng bộ...";
+        
+        // 🧩 Bước 1: Chia kịch bản dài thành các đoạn nhỏ dưới 250 từ trực tiếp trên RAM trình duyệt
+        const words = fullCleanText.split(' ');
+        const textChunks = [];
+        let currentChunk = [];
+        
+        for (let i = 0; i < words.length; i++) {
+            currentChunk.push(words[i]);
+            if (currentChunk.length >= 220 && (words[i].endsWith('.') || words[i].endsWith(',') || words[i].endsWith('!') || words[i].endsWith('?'))) {
+                textChunks.push(currentChunk.join(' '));
+                currentChunk = [];
+            }
+        }
+        if (currentChunk.length > 0) {
+            textChunks.push(currentChunk.join(' '));
+        }
+
+        progressStatus.innerText = `Phát hiện kịch bản dài. Đã chia thành ${textChunks.length} phân đoạn an toàn.`;
+        progressBar.style.width = "5%";
+        progressPercent.innerText = "5%";
 
         try {
-            // Gửi văn bản ĐÃ LỌC SẠCH lên route Backend Flask để xử lý tập trung
-            const res = await fetch('/api/tts', {
+            // Gửi đoạn đầu tiên lên để thiết lập khởi tạo file đích cố định trên Backend
+            progressStatus.innerText = "Đang xử lý phân đoạn âm thanh đầu tiên...";
+            let response = await fetch('/api/tts', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ text: cleanText, voice: selectedVoice })
+                body: JSON.stringify({ text: textChunks[0], voice: selectedVoice })
             });
-            const data = await res.json();
+            let data = await response.json();
             
-            if(data.success && data.audio_url) {
+            if (!data.success) {
+                throw new Error(data.error || "Lỗi khởi tạo giọng đọc.");
+            }
+
+            // Duyệt gửi các đoạn còn lại liên tục và cập nhật phần trăm thực tế lên màn hình
+            for (let i = 1; i < textChunks.length; i++) {
+                let percent = Math.round((i / textChunks.length) * 100);
+                progressStatus.innerText = `Đang đồng bộ phân đoạn ${i + 1}/${textChunks.length}...`;
+                progressBar.style.width = `${percent}%`;
+                progressPercent.innerText = `${percent}%`;
+
+                // Gọi API gửi tiếp phân đoạn chữ
+                response = await fetch('/api/tts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ text: textChunks[i], voice: selectedVoice })
+                });
+                data = await response.json();
+                
+                if (!data.success) {
+                    throw new Error(data.error || `Lỗi tại phân đoạn ${i + 1}`);
+                }
+            }
+
+            // Hoàn tất tải toàn bộ chuỗi dữ liệu
+            progressBar.style.width = "100%";
+            progressPercent.innerText = "100%";
+            progressStatus.innerText = "Hoàn thành gộp luồng dữ liệu tĩnh!";
+
+            if (data.success && data.audio_url) {
                 const player = document.getElementById('audio-player');
                 const downloadLink = document.getElementById('download-audio-link');
-                
-                // Thêm timestamp (?t=...) để chống hiện tượng dính bộ nhớ đệm (cache browser) khi tạo nhiều lần
                 const finalAudioUrl = data.audio_url + '?t=' + new Date().getTime();
                 
                 player.src = finalAudioUrl;
                 downloadLink.href = finalAudioUrl;
                 
-                resultText.innerText = "🎉 Chuyển đổi giọng nói AI giống người thật thành công! Bạn có thể nghe thử hoặc tải file MP3 về máy:";
+                resultText.innerText = `🎉 Xuất thành công kịch bản dài bằng đúng giọng bạn chọn!`;
                 audioBox.classList.remove('d-none');
                 
                 player.load();
-                player.play().catch(err => console.log("Hệ thống chặn tự động phát: ", err));
-            } else {
-                resultText.innerHTML = "❌ <strong class='text-danger'>Lỗi từ máy chủ:</strong> " + (data.error || "Không thể kết xuất âm thanh kịch bản.");
+                player.play().catch(err => console.log("Trình duyệt chặn tự động phát: ", err));
             }
+
         } catch(e) {
             console.error(e);
-            resultText.innerText = "❌ Thất bại: Không thể đồng bộ luồng âm thanh tĩnh với máy chủ Backend.";
+            resultText.innerHTML = `❌ <strong class='text-danger'>Quá trình xuất âm thanh thất bại:</strong> ${e.message}. Vui lòng giảm bớt từ hoặc thử lại!`;
+            progressBar.classList.replace('bg-danger', 'bg-secondary');
         } finally {
             btnTts.disabled = false;
             btnTts.innerText = "🔊 Chuyển Thành Giọng Đọc MP3";
+            setTimeout(() => { progressBox.classWith = progressBox.classList.add('d-none'); }, 5000);
         }
     }
 </script>
