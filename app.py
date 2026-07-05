@@ -126,7 +126,7 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ API TTS SỬA LỖI ĐỌC FILE VÀ HIỂN THỊ THỜI GIAN CHUẨN ĐÉT
+# 🎙️ API TTS THÔNG MINH 2 TẦNG BẢO VỆ - CHỐNG TRỐNG FILE AUDIO TUYỆT ĐỐI
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -139,33 +139,42 @@ def text_to_speech():
     if not text:
         return jsonify({"success": False, "error": "Văn bản trống"})
     
+    output_filename = "final_voice_output.mp3"
+    
+    # --- TẦNG 1: TRUY XUẤT EDGE-TTS (GIỌNG ĐỌC AI CAO CẤP) ---
     try:
-        # Lưu file tạm trên đĩa cục bộ server Render để đồng bộ luồng tải âm thanh
-        output_filename = "temp_voice_output.mp3"
-        
         async def save_audio():
             communicate = edge_tts.Communicate(text, voice)
             await communicate.save(output_filename)
 
-        # Kích hoạt Event Loop xử lý bất đồng bộ trong môi trường đồng bộ Flask
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         loop.run_until_complete(save_audio())
         loop.close()
         
-        if os.path.exists(output_filename):
+        # Kiểm tra file tồn tại và dung lượng phải lớn hơn 100 bytes (tránh file lỗi 0 bytes)
+        if os.path.exists(output_filename) and os.path.getsize(output_filename) > 100:
             with open(output_filename, "rb") as f:
                 audio_bytes = f.read()
-            
-            # Xóa file tạm ngay sau khi nạp xong vào RAM để giải phóng ổ đĩa
             os.remove(output_filename)
-            
             return send_file(io.BytesIO(audio_bytes), mimetype='audio/mp3', as_attachment=False)
-        else:
-            return jsonify({"success": False, "error": "Lỗi khởi tạo tệp âm thanh từ hệ thống"})
             
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
+        print(f"Hệ thống Edge-TTS bận, chuyển sang tầng dự phòng ổn định. Chi tiết: {e}")
+        if os.path.exists(output_filename):
+            try: os.remove(output_filename)
+            except: pass
+        
+    # --- TẦNG 2 (DỰ PHÒNG AN TOÀN): TỰ ĐỘNG CHUYỂN SANG gTTS NẾU LỖI LUỒNG ---
+    try:
+        from gtts import gTTS
+        fp = io.BytesIO()
+        tts = gTTS(text=text, lang='vi')
+        tts.write_to_fp(fp)
+        fp.seek(0)
+        return send_file(fp, mimetype='audio/mp3', as_attachment=False)
+    except Exception as e2:
+        return jsonify({"success": False, "error": f"Cả hai hệ thống kết xuất âm thanh đều bận: {str(e2)}"})
 
 # 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ LINH HOẠT ĐA CHIỀU
 @app.route('/api/translate', methods=['POST'])
