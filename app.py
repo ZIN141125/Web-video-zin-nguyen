@@ -12,7 +12,7 @@ import edge_tts  # <--- Thêm thư viện edge-tts xử lý giọng đọc con n
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
 
-# 📂 CẤU HÌCH THƯ MỤC LƯU TRỮ AUDIO MP3 TĨNH
+# 📂 CẤU HÌCH THƯ MỤC LƯ LƯU TRỮ AUDIO MP3 TĨNH
 STATIC_AUDIO_FOLDER = os.path.join(os.getcwd(), 'static', 'audio')
 os.makedirs(STATIC_AUDIO_FOLDER, exist_ok=True)
 
@@ -133,26 +133,35 @@ def logout():
     return redirect(url_for('index'))
 
 
-# 🎙️ ROUTE API TTS CHIA ĐOẠN ĐỘC LẬP - SỬA LỖI ĐỒNG BỘ GIỌNG ĐỌC CHI TIẾT
+# 🎙️ ROUTE API TTS - ĐÓN ĐẦU VÀ SỬA LỖI TRUYỀN THAM SỐ TỪ FRONT-END
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
         return jsonify({"success": False, "error": "Chưa đăng nhập hệ thống!"})
     
     try:
+        # ĐÓN ĐẦU: Nhận cả JSON lẫn Form data phòng trường hợp Front-end gửi sai kiểu dữ liệu
         req_data = request.get_json() or {}
+        if not req_data:
+            req_data = request.form
+            
         raw_text = req_data.get('text', '')
         
-        # 🎙️ ÉP ĐỒNG BỘ GIỌNG ĐỌC: Kiểm tra chặt chẽ chuỗi Front-end gửi lên
-        input_voice = str(req_data.get('voice', '')).strip()
+        # Lấy giá trị giọng đọc và ép về chữ thường để so sánh
+        input_voice = str(req_data.get('voice', '')).strip().lower()
         
-        # Thiết lập map giọng đọc chính xác để tránh Front-end truyền sai chuỗi định dạng
-        if 'NamMinh' in input_voice or 'namminh' in input_voice.lower():
+        # IN LOG KIỂM TRA: Xem Front-end thực sự đang gửi cái gì lên máy chủ Render
+        print(f"--- [DEBUG TTS] Văn bản nhận được: {len(raw_text)} ký tự | Giọng đọc nhận từ Front-end: '{input_voice}' ---")
+        
+        # 🎙️ BỘ LỌC ĐÓN ĐẦU: Nhận diện theo từ khóa, chấp nhận cả value từ thẻ option là tên gốc hoặc tên rút gọn
+        if 'namminh' in input_voice or 'nam minh' in input_voice or 'minh' in input_voice:
             voice = 'vi-VN-NamMinhNeural'
-        elif 'MaiPhuong' in input_voice or 'maiphuong' in input_voice.lower() or 'mai' in input_voice.lower():
+        elif 'maiphuong' in input_voice or 'mai phuong' in input_voice or 'mai' in input_voice or 'phuong' in input_voice:
             voice = 'vi-VN-MaiPhuongNeural'
         else:
-            voice = 'vi-VN-HoaiNamNeural' # Mặc định nếu không khớp hoặc lỗi truyền tin
+            voice = 'vi-VN-HoaiNamNeural' # Dự phòng nếu Front-end không gửi gì hoặc gửi rác
+            
+        print(f"--- [DEBUG TTS] Hệ thống quyết định chọn giọng: {voice} ---")
         
         # 🧼 Bước 1: Làm sạch văn bản kịch bản đầu vào
         clean_lines = []
@@ -174,7 +183,6 @@ def text_to_speech():
         for word in words:
             current_chunk.append(word)
             current_word_count += 1
-            # Khi đoạn đạt từ 200 từ trở lên và kết thúc bằng một dấu ngắt câu, tiến hành tách đoạn
             if current_word_count >= 200 and word.endswith(('.', '!', '?', ':', ';', ',', '\"', '»')):
                 chunks.append(" ".join(current_chunk))
                 current_chunk = []
@@ -188,7 +196,7 @@ def text_to_speech():
         final_filename = f"audio_{safe_username}.mp3"
         final_output_path = os.path.join(STATIC_AUDIO_FOLDER, final_filename)
 
-        # 🔄 Bước 3: Hàm Worker tải luồng dữ liệu nhị phân song song/nối tiếp và gộp trực tiếp trên RAM
+        # 🔄 Bước 3: Hàm Worker gộp trực tiếp luồng byte âm thanh trên RAM
         def run_split_tts():
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
@@ -202,18 +210,15 @@ def text_to_speech():
                         communicate = edge_tts.Communicate(chunk_text, voice)
                         chunk_bytes = bytearray()
                         
-                        # Đọc trực tiếp luồng byte dữ liệu thô (audio chunk bytes) truyền về từ Microsoft
                         async_stream = communicate.stream()
                         async for chunk in async_stream:
                             if chunk["type"] == "audio":
                                 chunk_bytes.extend(chunk["data"])
                         
-                        # Gộp dữ liệu âm thanh phân đoạn nối tiếp nhau vào mảng RAM chung
                         combined_audio_data.extend(chunk_bytes)
                 
                 new_loop.run_until_complete(fetch_chunks())
                 
-                # Ghi một lần duy nhất toàn bộ khối dữ liệu tổng hợp xuống file MP3
                 if combined_audio_data:
                     with open(final_output_path, "wb") as f:
                         f.write(combined_audio_data)
@@ -221,10 +226,10 @@ def text_to_speech():
             finally:
                 new_loop.close()
 
-        # Thực thi trong một tiểu trình (Thread) độc lập để tránh block tiến trình chính của server Render
+        # Thực thi trong một tiểu trình Thread độc lập
         tts_thread = threading.Thread(target=run_split_tts)
         tts_thread.start()
-        tts_thread.join(timeout=300) # Nâng thời gian chờ tối đa lên 5 phút cho kịch bản siêu dài
+        tts_thread.join(timeout=300)
 
         # Kiểm tra tính toàn vẹn và dung lượng thực tế của file MP3 đầu ra
         if not os.path.exists(final_output_path) or os.path.getsize(final_output_path) == 0:
@@ -232,13 +237,13 @@ def text_to_speech():
                 os.remove(final_output_path)
             return jsonify({
                 "success": False, 
-                "error": f"Không thể kết xuất dữ liệu âm thanh kịch bản dài bằng giọng {voice}. Server Microsoft TTS từ chối kết nối. Hãy thử lại sau vài giây hoặc đổi sang giọng đọc khác!"
+                "error": f"Không thể kết xuất dữ liệu âm thanh bằng giọng {voice}. Vui lòng thử lại!"
             })
 
         # Trả về URL dẫn đến file audio tĩnh kèm token thời gian thực (mtime) để buộc trình duyệt xóa cache file cũ
         return jsonify({
             "success": True, 
-            "text": f"Đã xử lý thành công {len(chunks)} phân đoạn kịch bản dài bằng giọng đọc {voice}.",
+            "text": f"Đã xử lý kịch bản dài thành công bằng giọng đọc {voice}.",
             "audio_url": f"/static/audio/{final_filename}?v={os.path.getmtime(final_output_path)}"
         })
         
