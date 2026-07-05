@@ -2,6 +2,7 @@ import os
 import json
 import io
 import asyncio
+import re
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
@@ -138,26 +139,51 @@ def text_to_speech():
     
     try:
         req_data = request.get_json() or {}
-        text = req_data.get('text', '').strip()
+        raw_text = req_data.get('text', '')
         voice = req_data.get('voice', 'vi-VN-HoaiNamNeural') # Nhận cấu hình giọng chọn từ giao diện
         
+        # 🧼 BẢO VỆ BACKEND: Lọc bỏ dòng trống và các dòng gạch phân tách kịch bản rác (---, ***, v.v.)
+        clean_lines = []
+        for line in raw_text.split('\n'):
+            line_str = line.strip()
+            # Bỏ qua dòng trống hoặc dòng chứa chuỗi ký tự phân tách đặc biệt
+            if line_str and not re.match(r'^[-\*_ ]+$', line_str):
+                clean_lines.append(line_str)
+        
+        text = "\n".join(clean_lines).strip()
+        
         if not text:
-            return jsonify({"success": False, "error": "Văn bản kịch bản trống!"})
+            return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc chứa ký tự rác không hợp lệ!"})
             
         # Xác định tên file đầu ra dựa trên tài khoản để tránh ghi đè dồn dập giữa các phiên làm việc
         safe_username = "".join([c for c in session['username'] if c.isalnum()])
         filename = f"audio_{safe_username}.mp3"
         output_path = os.path.join(STATIC_AUDIO_FOLDER, filename)
         
-        # Hàm xử lý chuyển đổi đồng bộ bất tuần tự của thư viện Edge-TTS
+        # Hàm xử lý chuyển đổi bất tuần tự của thư viện Edge-TTS
         async def generate_voice_file():
             communicate = edge_tts.Communicate(text, voice)
             await communicate.save(output_path)
             
-        # Kích hoạt luồng chạy không chặn trong môi trường nền Python
-        asyncio.run(generate_voice_file())
+        # 🌟 KHẮC PHỤC XUNG ĐỘT EVENT LOOP TRÊN RENDER/GUNICORN
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+        if loop.is_running():
+            # Nếu loop đang chạy (môi trường server bất đồng bộ phức tạp), ép tiến trình chạy đồng bộ an toàn
+            future = asyncio.run_coroutine_threadsafe(generate_voice_file(), loop)
+            future.result() # Đợi cho tới khi tạo xong file
+        else:
+            loop.run_until_complete(generate_voice_file())
         
-        # Trả về tín hiệu thành công kèm URL tĩnh dẫn đến file audio
+        # Kiểm tra sự tồn tại và tính hợp lệ của file sau khi xuất bản
+        if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            return jsonify({"success": False, "error": "Hệ thống Edge-TTS không xuất được dữ liệu âm thanh hợp lệ."})
+
+        # Trả về tín hiệu thành công kèm URL dẫn đến file audio tĩnh
         return jsonify({
             "success": True, 
             "text": text,
