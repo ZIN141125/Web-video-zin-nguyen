@@ -3,11 +3,11 @@ import json
 import io
 import asyncio
 import re
-import time
+import threading  # <--- Thêm thư viện xử lý đa luồng độc lập để cách ly tiến trình asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
-import edge_tts  # Thư viện edge-tts xử lý giọng đọc chính xác
+import edge_tts  # <--- Thêm thư viện edge-tts xử lý giọng đọc con người
 
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
@@ -16,7 +16,7 @@ app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
 STATIC_AUDIO_FOLDER = os.path.join(os.getcwd(), 'static', 'audio')
 os.makedirs(STATIC_AUDIO_FOLDER, exist_ok=True)
 
-# 🔑 CẤU HÌCH GOOGLE OAUTH
+# 🔑 CẤU HÌNH GOOGLE OAUTH
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
 
@@ -48,7 +48,7 @@ def index():
         return render_template('index.html', show_login=True, is_register=False)
     return redirect(url_for('dashboard'))
 
-# 📊 ROUTE DASHBOARD (KHÔNG GIAN LÀM VIỆC)
+# 📊 ROUTE DASHBOARD (KHÔNG GIAN LÀM VIỆC SAU KHI LOGGED IN)
 @app.route('/dashboard')
 def dashboard():
     if not session.get('username'):
@@ -133,7 +133,7 @@ def logout():
     return redirect(url_for('index'))
 
 
-# 🎙️ ROUTE API TTS MỚI - TINH GỌN, CHÍNH XÁC, DÙNG THẲNG COMMUNICATE.SAVE()
+# 🎙️ ROUTE API TTS CHIA ĐOẠN ĐỘC LẬP - TỐI ƯU CHO KỊCH BẢN TRÊN 3000 TỪ & GIỌNG ĐỌC DÀI
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -141,28 +141,94 @@ def text_to_speech():
     
     try:
         req_data = request.get_json() or {}
-        raw_text = req_data.get('text', '').strip()
-        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural').strip()
+        raw_text = req_data.get('text', '')
+        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural')
         
-        if not raw_text:
-            return jsonify({"success": False, "error": "Văn bản kịch bản trống!"})
+        # 🧼 Bước 1: Làm sạch văn bản kịch bản đầu vào
+        clean_lines = []
+        for line in raw_text.split('\n'):
+            line_str = line.strip()
+            if line_str and not re.match(r'^[-\*_ ]+$', line_str):
+                clean_lines.append(line_str)
+        
+        full_text = " ".join(clean_lines).strip()
+        if not full_text:
+            return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc không hợp lệ!"})
 
-        # Định danh file audio tĩnh duy nhất cho tài khoản người dùng
+        # 🧩 Bước 2: Chia nhỏ kịch bản dài thành các đoạn an toàn (~200-250 từ/đoạn) dựa trên dấu ngắt câu
+        words = full_text.split()
+        chunks = []
+        current_chunk = []
+        current_word_count = 0
+        
+        for word in words:
+            current_chunk.append(word)
+            current_word_count += 1
+            # Khi đoạn đạt từ 200 từ trở lên và kết thúc bằng một dấu ngắt câu, tiến hành tách đoạn
+            if current_word_count >= 200 and word.endswith(('.', '!', '?', ':', ';', ',', '\"', '»')):
+                chunks.append(" ".join(current_chunk))
+                current_chunk = []
+                current_word_count = 0
+        
+        if current_chunk:
+            chunks.append(" ".join(current_chunk))
+
+        # Cấu hình file đích cố định theo tài khoản người dùng
         safe_username = "".join([c for c in session['username'] if c.isalnum()])
         final_filename = f"audio_{safe_username}.mp3"
         final_output_path = os.path.join(STATIC_AUDIO_FOLDER, final_filename)
 
-        # 🚀 TỐI ƯU HÓA NGUYÊN BẢN: Đẩy thẳng toàn bộ khối văn bản thô vào Edge-TTS để xử lý tự động
-        async def generate():
-            communicate = edge_tts.Communicate(raw_text, voice)
-            await communicate.save(final_output_path)
+        # 🔄 Bước 3: Hàm Worker tải luồng dữ liệu nhị phân song song/nối tiếp và gộp trực tiếp trên RAM
+        def run_split_tts():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            
+            try:
+                combined_audio_data = bytearray()
+                
+                async def fetch_chunks():
+                    nonlocal combined_audio_data
+                    for chunk_text in chunks:
+                        communicate = edge_tts.Communicate(chunk_text, voice)
+                        chunk_bytes = bytearray()
+                        
+                        # Đọc trực tiếp luồng byte dữ liệu thô (audio chunk bytes) truyền về từ Microsoft
+                        async for chunk in communicate.stream():
+                            if chunk["type"] == "audio":
+                                chunk_bytes.extend(chunk["data"])
+                        
+                        # Gộp dữ liệu âm thanh phân đoạn nối tiếp nhau vào mảng RAM chung
+                        combined_audio_data.extend(chunk_bytes)
+                
+                new_loop.run_until_complete(fetch_chunks())
+                
+                # Ghi một lần duy nhất toàn bộ khối dữ liệu tổng hợp xuống file MP3
+                if combined_audio_data:
+                    with open(final_output_path, "wb") as f:
+                        f.write(combined_audio_data)
+                        
+            finally:
+                new_loop.close()
 
-        # Chạy đồng bộ khối tác vụ Async
-        asyncio.run(generate())
+        # Thực thi trong một tiểu trình (Thread) độc lập để tránh block tiến trình chính của server Render
+        tts_thread = threading.Thread(target=run_split_tts)
+        tts_thread.start()
+        tts_thread.join(timeout=300) # Nâng thời gian chờ tối đa lên 5 phút cho kịch bản siêu dài
 
+        # Kiểm tra tính toàn vẹn và dung lượng thực tế của file MP3 đầu ra
+        if not os.path.exists(final_output_path) or os.path.getsize(final_output_path) == 0:
+            if os.path.exists(final_output_path):
+                os.remove(final_output_path)
+            return jsonify({
+                "success": False, 
+                "error": "Không thể kết xuất dữ liệu âm thanh kịch bản dài. Server Microsoft TTS từ chối kết nối. Hãy thử lại sau vài giây hoặc đổi sang giọng đọc khác!"
+            })
+
+        # Trả về URL dẫn đến file audio tĩnh kèm token thời gian thực (mtime) để buộc trình duyệt xóa cache file cũ
         return jsonify({
             "success": True, 
-            "audio_url": f"/static/audio/{final_filename}"
+            "text": f"Đã xử lý thành công {len(chunks)} phân đoạn kịch bản dài.",
+            "audio_url": f"/static/audio/{final_filename}?v={os.path.getmtime(final_output_path)}"
         })
         
     except Exception as e:
@@ -170,26 +236,12 @@ def text_to_speech():
         return jsonify({"success": False, "error": str(e)})
 
 
-# 📁 ROUTE PHỤC VỤ FILE MP3 TĨNH
+# Route để cấu hình Flask trả về file MP3 trong thư mục tĩnh static/audio/
 @app.route('/static/audio/<filename>')
 def serve_audio(filename):
     return send_from_directory(STATIC_AUDIO_FOLDER, filename)
 
-
-# 🔍 ROUTE KIỂM TRA HỆ THỐNG GIỌNG ĐỌC CỦA MICROSOFT EDGE-TTS
-@app.route('/api/test-voices')
-def test_voices():
-    try:
-        async def get_voices():
-            return await edge_tts.list_voices()
-        
-        all_voices = asyncio.run(get_voices())
-        return jsonify(all_voices)
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-
-
-# 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ
+# 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ LINH HOẠT ĐA CHIỀU
 @app.route('/api/translate', methods=['POST'])
 def translate_text():
     if not session.get('username'): 
@@ -206,7 +258,7 @@ def translate_text():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-# 📂 CÁC ROUTE LƯU TRỮ KHÁC
+# 📂 CÁC ROUTE LƯU TRỮ KHÁC (GIỮ NGUYÊN)
 @app.route('/add_video', methods=['POST'])
 def add_video():
     if not session.get('username'): return redirect(url_for('index'))
