@@ -4,7 +4,6 @@ import io
 import asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file, session, flash
 from deep_translator import GoogleTranslator
-import edge_tts
 from authlib.integrations.flask_client import OAuth
 
 app = Flask(__name__)
@@ -126,7 +125,7 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ API TTS THÔNG MINH 2 TẦNG BẢO VỆ - CHỐNG TRỐNG FILE AUDIO TUYỆT ĐỐI
+# 🎙️ API TTS ĐÃ SỬA THEO BƯỚC 1 PHƯƠNG ÁN 2: THU GỌN VÀ CHUYỂN DỮ LIỆU SẠCH XỬ LÝ Ở FRONT-END
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -134,47 +133,12 @@ def text_to_speech():
     
     req_data = request.get_json()
     text = req_data.get('text', '').strip()
-    voice = req_data.get('voice', 'vi-VN-HoaiNamNeural') 
     
     if not text:
         return jsonify({"success": False, "error": "Văn bản trống"})
-    
-    output_filename = "final_voice_output.mp3"
-    
-    # --- TẦNG 1: TRUY XUẤT EDGE-TTS (GIỌNG ĐỌC AI CAO CẤP) ---
-    try:
-        async def save_audio():
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(output_filename)
-
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(save_audio())
-        loop.close()
         
-        # Kiểm tra file tồn tại và dung lượng phải lớn hơn 100 bytes (tránh file lỗi 0 bytes)
-        if os.path.exists(output_filename) and os.path.getsize(output_filename) > 100:
-            with open(output_filename, "rb") as f:
-                audio_bytes = f.read()
-            os.remove(output_filename)
-            return send_file(io.BytesIO(audio_bytes), mimetype='audio/mp3', as_attachment=False)
-            
-    except Exception as e:
-        print(f"Hệ thống Edge-TTS bận, chuyển sang tầng dự phòng ổn định. Chi tiết: {e}")
-        if os.path.exists(output_filename):
-            try: os.remove(output_filename)
-            except: pass
-        
-    # --- TẦNG 2 (DỰ PHÒNG AN TOÀN): TỰ ĐỘNG CHUYỂN SANG gTTS NẾU LỖI LUỒNG ---
-    try:
-        from gtts import gTTS
-        fp = io.BytesIO()
-        tts = gTTS(text=text, lang='vi')
-        tts.write_to_fp(fp)
-        fp.seek(0)
-        return send_file(fp, mimetype='audio/mp3', as_attachment=False)
-    except Exception as e2:
-        return jsonify({"success": False, "error": f"Cả hai hệ thống kết xuất âm thanh đều bận: {str(e2)}"})
+    # Trả trực tiếp chuỗi văn bản kịch bản về cho Trình duyệt của Client tự xử lý đọc bằng Web Speech API
+    return jsonify({"success": True, "text": text})
 
 # 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ LINH HOẠT ĐA CHIỀU
 @app.route('/api/translate', methods=['POST'])
