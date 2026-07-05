@@ -120,7 +120,7 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ API TTS NÂNG CẤP (EDGE-TTS: KHÔNG GIỚI HẠN TỪ, GIỌNG CON NGƯỜI)
+# 🎙️ API TTS NÂNG CẤP (ĐÃ SỬA LỖI TRỐNG FILE VÀ KHÔNG PHÁT ĐƯỢC AUDIO)
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -128,33 +128,43 @@ def text_to_speech():
     
     req_data = request.get_json()
     text = req_data.get('text', '').strip()
-    
-    # Danh sách giọng đọc AI Việt Nam siêu giống người thật:
-    # 1. vi-VN-HoaiNamNeural (Nam - Giọng đọc truyện/tin tức cực hay)
-    # 2. vi-VN-NamMinhNeural (Nam - Giọng chuẩn, ấm áp)
-    # 3. vi-VN-MaiPhuongNeural (Nữ - Giọng mượt mà, truyền cảm)
     voice = req_data.get('voice', 'vi-VN-HoaiNamNeural') 
     
     if not text:
         return jsonify({"success": False, "error": "Văn bản trống"})
     
     try:
-        communicate = edge_tts.Communicate(text, voice)
-        fp = io.BytesIO()
+        # Tạo tên file tạm duy nhất dựa theo session người dùng để tránh trùng lặp
+        user_id = session.get('username').split('@')[0]
+        output_filename = f"output_{user_id}.mp3"
         
-        # Chạy vòng lặp bất đồng bộ để xử lý chuỗi văn bản dài từ 3000-5000 từ cực tốc độ
+        # Sử dụng hàm hàm lưu trực tiếp (.save) bất đồng bộ chính thống của Edge-TTS
+        async def generate_audio():
+            communicate = edge_tts.Communicate(text, voice)
+            await communicate.save(output_filename)
+
+        # Khởi chạy luồng bất đồng bộ độc lập để tải toàn bộ file về server dữ liệu
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        for chunk in loop.run_until_complete(communicate.stream()):
-            if chunk["data"]:
-                fp.write(chunk["data"])
-                
-        fp.seek(0)
-        return send_file(fp, mimetype='audio/mp3', as_attachment=False)
+        loop.run_until_complete(generate_audio())
+        loop.close()
+        
+        # Đọc ngược dữ liệu từ file vừa kết xuất vào RAM để trả về giao diện
+        if os.path.exists(output_filename):
+            with open(output_filename, "rb") as f:
+                audio_data = f.read()
+            
+            # Xóa file tạm ngay lập tức sau khi đọc xong để dọn dẹp ổ đĩa Render
+            os.remove(output_filename)
+            
+            return send_file(io.BytesIO(audio_data), mimetype='audio/mp3', as_attachment=False)
+        else:
+            return jsonify({"success": False, "error": "Không thể tạo file âm thanh."})
+            
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-# 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ TOÀN CẦU
+# 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ LINH HOẠT ĐA CHIỀU
 @app.route('/api/translate', methods=['POST'])
 def translate_text():
     if not session.get('username'): 
@@ -162,10 +172,12 @@ def translate_text():
     
     req_data = request.get_json()
     text = req_data.get('text', '')
-    target_lang = req_data.get('lang', 'vi') # Nhận mã ngôn ngữ linh hoạt từ giao diện (en, zh-CN, ja, ko, fr...)
+    source_lang = req_data.get('source', 'auto') # Nhận ngôn ngữ gốc linh hoạt (mặc định: tự phát hiện)
+    target_lang = req_data.get('lang', 'vi')     # Nhận ngôn ngữ cần dịch sang
     
     try:
-        translated = GoogleTranslator(source='auto', target=target_lang).translate(text)
+        # Cập nhật source_lang linh động để dịch được cả ngoại ngữ -> Việt và Việt -> ngoại ngữ
+        translated = GoogleTranslator(source=source_lang, target=target_lang).translate(text)
         return jsonify({"success": True, "result": translated})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
