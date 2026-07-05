@@ -46,6 +46,16 @@
                 {{ 'Đăng Ký Ngay ➔' if is_register else 'Vào Hệ Thống ➔' }}
             </button>
         </form>
+        <div style="text-align: center; margin: 15px 0; color: #888; font-size: 14px;">
+    <span>hoặc</span>
+</div>
+
+<div style="text-align: center; margin-bottom: 15px;">
+    <a href="/login/google" style="display: inline-flex; align-items: center; justify-content: center; background-color: #fff; color: #3c4043; border: 1px solid #dadce0; padding: 10px 20px; border-radius: 4px; font-family: 'Roboto', sans-serif; font-size: 14px; font-weight: 500; text-decoration: none; box-shadow: 0 1px 2px 0 rgba(60,64,67,0.3), 0 1px 3px 1px rgba(60,64,67,0.15); transition: background-color 0.2s; width: 100%; box-sizing: border-box;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg" alt="Google logo" style="width: 18px; height: 18px; margin-right: 10px;">
+        Đăng nhập bằng Google
+    </a>
+</div>
         
         <div class="text-center mt-3">
             {% if is_register %}
