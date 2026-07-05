@@ -4,11 +4,10 @@ import io
 import asyncio
 import re
 import time
-import threading  # <--- Xử lý đa luồng độc lập cách ly tiến trình asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
-import edge_tts  # <--- Thư viện edge-tts xử lý giọng đọc con người
+import edge_tts  # Thư viện edge-tts xử lý giọng đọc chính xác
 
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
@@ -49,7 +48,7 @@ def index():
         return render_template('index.html', show_login=True, is_register=False)
     return redirect(url_for('dashboard'))
 
-# 📊 ROUTE DASHBOARD (KHÔNG GIAN LÀM VIỆC SAU KHI LOGGED IN)
+# 📊 ROUTE DASHBOARD (KHÔNG GIAN LÀM VIỆC)
 @app.route('/dashboard')
 def dashboard():
     if not session.get('username'):
@@ -134,7 +133,7 @@ def logout():
     return redirect(url_for('index'))
 
 
-# 🎙️ ROUTE API TTS - ÉP CỐ ĐỊNH GIỌNG ĐỌC & TRÁNH BLOCK IP BẰNG CƠ CHẾ COOLDOWN
+# 🎙️ ROUTE API TTS MỚI - TINH GỌN, CHÍNH XÁC, DÙNG THẲNG COMMUNICATE.SAVE()
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -142,132 +141,28 @@ def text_to_speech():
     
     try:
         req_data = request.get_json() or {}
-        if not req_data:
-            req_data = request.form
-            
-        raw_text = req_data.get('text', '')
-        input_voice = str(req_data.get('voice', '')).strip().lower()
+        raw_text = req_data.get('text', '').strip()
+        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural').strip()
         
-        # 🎙️ ÉP CHÍNH XÁC GIỌNG ĐỌC: Không dùng cơ chế tự chuyển đổi giọng cứu cánh nữa!
-        if 'namminh' in input_voice or 'nam minh' in input_voice or 'minh' in input_voice:
-            voice = 'vi-VN-NamMinhNeural'
-            display_name = "Nam Minh"
-        elif 'maiphuong' in input_voice or 'mai phuong' in input_voice or 'mai' in input_voice or 'phuong' in input_voice:
-            voice = 'vi-VN-MaiPhuongNeural'
-            display_name = "Mai Phương"
-        else:
-            voice = 'vi-VN-HoaiNamNeural'
-            display_name = "Hoài Nam"
-        
-        # 🧼 Bước 1: Làm sạch văn bản kịch bản đầu vào
-        clean_lines = []
-        for line in raw_text.split('\n'):
-            line_str = line.strip()
-            if line_str and not re.match(r'^[-\*_ ]+$', line_str):
-                clean_lines.append(line_str)
-        
-        full_text = " ".join(clean_lines).strip()
-        if not full_text:
-            return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc không hợp lệ!"})
+        if not raw_text:
+            return jsonify({"success": False, "error": "Văn bản kịch bản trống!"})
 
-        # 🧩 Bước 2: Chia nhỏ kịch bản dài thành các đoạn an toàn (~200 từ/đoạn) dựa trên dấu ngắt câu
-        words = full_text.split()
-        chunks = []
-        current_chunk = []
-        current_word_count = 0
-        
-        for word in words:
-            current_chunk.append(word)
-            current_word_count += 1
-            if current_word_count >= 200 and word.endswith(('.', '!', '?', ':', ';', ',', '\"', '»')):
-                chunks.append(" ".join(current_chunk))
-                current_chunk = []
-                current_word_count = 0
-        
-        if current_chunk:
-            chunks.append(" ".join(current_chunk))
-
-        # Cấu hình file đích cố định theo tài khoản người dùng
+        # Định danh file audio tĩnh duy nhất cho tài khoản người dùng
         safe_username = "".join([c for c in session['username'] if c.isalnum()])
         final_filename = f"audio_{safe_username}.mp3"
         final_output_path = os.path.join(STATIC_AUDIO_FOLDER, final_filename)
 
-        # Biến trạng thái theo dõi tiến trình
-        is_generation_successful = False
-        error_message = ""
+        # 🚀 TỐI ƯU HÓA NGUYÊN BẢN: Đẩy thẳng toàn bộ khối văn bản thô vào Edge-TTS để xử lý tự động
+        async def generate():
+            communicate = edge_tts.Communicate(raw_text, voice)
+            await communicate.save(final_output_path)
 
-        # 🔄 Bước 3: Hàm Worker tải luồng dữ liệu byte âm thanh độc lập kèm cơ chế Cooldown chống Block
-        def run_split_tts():
-            nonlocal is_generation_successful, error_message
-            new_loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(new_loop)
-            
-            try:
-                combined_audio_data = bytearray()
-                
-                async def fetch_chunks():
-                    nonlocal combined_audio_data, is_generation_successful, error_message
-                    
-                    for idx, chunk_text in enumerate(chunks):
-                        print(f"--- [TTS PROCESSING] Đang tải đoạn {idx+1}/{len(chunks)} bằng giọng: {voice} ---")
-                        
-                        try:
-                            communicate = edge_tts.Communicate(chunk_text, voice)
-                            chunk_bytes = bytearray()
-                            
-                            async_stream = communicate.stream()
-                            async for chunk in async_stream:
-                                if chunk["type"] == "audio":
-                                    chunk_bytes.extend(chunk["data"])
-                            
-                            # Kiểm tra nếu Microsoft từ chối trả kết quả ở phân đoạn này
-                            if not chunk_bytes:
-                                error_message = f"Máy chủ Microsoft đột ngột từ chối phản hồi ở phân đoạn {idx+1} của giọng {display_name}."
-                                return
-                                
-                            combined_audio_data.extend(chunk_bytes)
-                            
-                            # ⏱️ CƠ CHẾ COOLDOWN GIÃN CÁCH: Nếu chưa phải đoạn cuối, nghỉ 1.5s để qua mặt bộ lọc Rate Limit
-                            if idx < len(chunks) - 1:
-                                await asyncio.sleep(1.5)
-                                
-                        except Exception as segment_error:
-                            error_message = f"Lỗi phát sinh tại đoạn {idx+1}: {str(segment_error)}"
-                            return
-                            
-                    is_generation_successful = True
-                
-                new_loop.run_until_complete(fetch_chunks())
-                
-                # Ghi dữ liệu thô tổng hợp nếu toàn bộ chuỗi phân đoạn tải thành công hoàn toàn
-                if is_generation_successful and combined_audio_data:
-                    with open(final_output_path, "wb") as f:
-                        f.write(combined_audio_data)
-                        
-            finally:
-                new_loop.close()
+        # Chạy đồng bộ khối tác vụ Async
+        asyncio.run(generate())
 
-        # Khởi chạy trong tiểu trình Thread cách ly hoàn toàn với Render WSGI
-        tts_thread = threading.Thread(target=run_split_tts)
-        tts_thread.start()
-        tts_thread.join(timeout=360) # Chờ tối đa 6 phút cho kịch bản dài 2000-3000 từ
-
-        # Nếu quá trình sinh file thất bại, xóa file rác cũ và trả lỗi trực tiếp về màn hình
-        if not is_generation_successful or not os.path.exists(final_output_path) or os.path.getsize(final_output_path) == 0:
-            if os.path.exists(final_output_path):
-                os.remove(final_output_path)
-            
-            detail_err = error_message if error_message else "Kết nối mạng đến Microsoft bị gián đoạn."
-            return jsonify({
-                "success": False, 
-                "error": f"❌ Lỗi giọng đọc {display_name}: {detail_err} Vui lòng thử lại sau vài giây!"
-            })
-
-        # Trả về URL dẫn đến file audio tĩnh chuẩn giọng người dùng chọn
         return jsonify({
             "success": True, 
-            "text": f"Đã kết xuất thành công toàn bộ văn bản bằng giọng đọc: {display_name}.",
-            "audio_url": f"/static/audio/{final_filename}?v={os.path.getmtime(final_output_path)}"
+            "audio_url": f"/static/audio/{final_filename}"
         })
         
     except Exception as e:
@@ -275,12 +170,26 @@ def text_to_speech():
         return jsonify({"success": False, "error": str(e)})
 
 
-# Route để cấu hình Flask trả về file MP3 trong thư mục tĩnh static/audio/
+# 📁 ROUTE PHỤC VỤ FILE MP3 TĨNH
 @app.route('/static/audio/<filename>')
 def serve_audio(filename):
     return send_from_directory(STATIC_AUDIO_FOLDER, filename)
 
-# 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ LINH HOẠT ĐA CHIỀU
+
+# 🔍 ROUTE KIỂM TRA HỆ THỐNG GIỌNG ĐỌC CỦA MICROSOFT EDGE-TTS
+@app.route('/api/test-voices')
+def test_voices():
+    try:
+        async def get_voices():
+            return await edge_tts.list_voices()
+        
+        all_voices = asyncio.run(get_voices())
+        return jsonify(all_voices)
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+
+
+# 🌐 API DỊCH THUẬT ĐA NGÔN NGỮ
 @app.route('/api/translate', methods=['POST'])
 def translate_text():
     if not session.get('username'): 
@@ -297,7 +206,7 @@ def translate_text():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
 
-# 📂 CÁC ROUTE LƯU TRỮ KHÁC (GIỮ NGUYÊN)
+# 📂 CÁC ROUTE LƯU TRỮ KHÁC
 @app.route('/add_video', methods=['POST'])
 def add_video():
     if not session.get('username'): return redirect(url_for('index'))
