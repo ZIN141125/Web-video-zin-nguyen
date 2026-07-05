@@ -43,7 +43,6 @@
                 <input type="password" name="password" class="form-control" placeholder="Nhập mật khẩu..." required>
             </div>
             
-            {# 🔑 TÍNH NĂNG 1: THÊM Ô XÁC NHẬN MẬT KHẨU VÀO ĐÚNG FORM ĐĂNG KÝ #}
             {% if is_register %}
             <div class="mb-3">
                 <label class="form-label fw-semibold text-success">Xác nhận mật khẩu</label>
@@ -98,6 +97,7 @@
     </ul>
 
     <div class="tab-content" id="myTabContent">
+        <!-- TAB 1: QUẢN LÝ VIDEO -->
         <div class="tab-pane fade show active" id="video-content" role="tabpanel">
             <div class="row">
                 <div class="col-md-4 mb-4">
@@ -135,6 +135,7 @@
             </div>
         </div>
 
+        <!-- TAB 2: XƯỞNG CÔNG CỤ AI (ĐÃ ĐƯỢC CHUẨN HÓA) -->
         <div class="tab-pane fade" id="ai-content" role="tabpanel">
             <div class="card p-4">
                 <h4 class="fw-bold text-secondary mb-3">Trợ lý Kịch bản Đa năng (AI Studio)</h4>
@@ -145,8 +146,18 @@
                 </div>
                 
                 <div class="row mb-4 g-3">
-                    {# 🌐 TÍNH NĂNG 2: HỘP CHỌN ĐA DẠNG NGÔN NGỮ DỊCH THUẬT #}
-                    <div class="col-md-6">
+                    <!-- 🌐 Ô CHỌN NGÔN NGỮ NGUỒN VÀ ĐÍCH ĐỘNG -->
+                    <div class="col-md-3">
+                        <label class="form-label fw-bold text-success">Từ ngôn ngữ:</label>
+                        <select id="translate-source" class="form-select border-success">
+                            <option value="auto" selected>Tự động nhận diện 🔍</option>
+                            <option value="vi">Tiếng Việt 🇻🇳</option>
+                            <option value="en">Tiếng Anh 🇺🇸</option>
+                            <option value="zh-CN">Tiếng Trung 🇨🇳</option>
+                            <option value="ja">Tiếng Nhật 🇯🇵</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
                         <label class="form-label fw-bold text-success">🎯 Chọn Ngôn ngữ đích cần dịch:</label>
                         <select id="translate-lang" class="form-select border-success">
                             <option value="vi" selected>Tiếng Việt 🇻🇳</option>
@@ -160,7 +171,7 @@
                         </select>
                     </div>
                     
-                    {# 🎙️ TÍNH NĂNG 3: HỘP CHỌN GIỌNG ĐỌC AI CON NGƯỜI SIÊU THẬT #}
+                    <!-- 🎙️ Ô CHỌN GIỌNG ĐỌC AI -->
                     <div class="col-md-6">
                         <label class="form-label fw-bold text-danger">🎙️ Chọn Giọng đọc AI nâng cao (Edge-TTS):</label>
                         <select id="tts-voice" class="form-select border-danger">
@@ -187,6 +198,7 @@
             </div>
         </div>
 
+        <!-- TAB 3: HỘP TÀI NGUYÊN -->
         <div class="tab-pane fade" id="tool-content" role="tabpanel">
             <div class="row">
                 <div class="col-md-4 mb-4">
@@ -224,9 +236,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-    // 🌐 Hàm xử lý Dịch thuật Đa Ngôn ngữ động
+    // 🌐 Hàm xử lý Dịch thuật Đa Ngôn ngữ động
     async function executeTranslate() {
-        const text = document.getElementById('ai-text').value.strip ? document.getElementById('ai-text').value.strip() : document.getElementById('ai-text').value;
+        const rawText = document.getElementById('ai-text').value;
+        const text = rawText && rawText.trim ? rawText.trim() : rawText;
+        const sourceLang = document.getElementById('translate-source').value;
         const targetLang = document.getElementById('translate-lang').value;
         
         if(!text) { alert('Vui lòng nhập văn bản trước!'); return; }
@@ -243,7 +257,7 @@
             const res = await fetch('/api/translate', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text: text, lang: targetLang})
+                body: JSON.stringify({text: text, source: sourceLang, lang: targetLang})
             });
             const data = await res.json();
             if(data.success) { 
@@ -256,9 +270,10 @@
         }
     }
 
-    // 🎙️ Hàm xử lý Chuyển văn bản dài (3000-5000 từ) thành Giọng đọc AI nâng cao siêu tốc
+    // 🎙️ Hàm xử lý Chuyển văn bản dài thành Giọng đọc AI nâng cao siêu tốc (Đồng bộ, tránh treo 0:00)
     async function executeTTS() {
-        const text = document.getElementById('ai-text').value;
+        const rawText = document.getElementById('ai-text').value;
+        const text = rawText && rawText.trim ? rawText.trim() : rawText;
         const selectedVoice = document.getElementById('tts-voice').value;
         const btnTts = document.getElementById('btn-tts');
         
@@ -269,7 +284,7 @@
         const audioBox = document.getElementById('audio-player-box');
         
         resultBox.classList.remove('d-none');
-        resultText.innerText = "⏳ Trợ lý AI đang tạo giọng đọc siêu tốc cho đoạn kịch bản dài của bạn, vui lòng đợi một lát...";
+        resultText.innerText = "⏳ Trợ lý AI đang tạo giọng đọc cho đoạn kịch bản của bạn, vui lòng đợi hệ thống kết xuất âm thanh...";
         audioBox.classList.add('d-none');
         btnTts.disabled = true;
         btnTts.innerText = "⏳ Đang kết xuất Audio...";
@@ -283,17 +298,23 @@
             
             if(res.ok) {
                 const blob = await res.blob();
+                if(blob.size < 100) {
+                    throw new Error("Kích thước tệp âm thanh quá nhỏ hoặc bị rỗng.");
+                }
                 const audioUrl = URL.createObjectURL(blob);
                 const player = document.getElementById('audio-player');
+                
                 player.src = audioUrl;
-                resultText.innerText = "🎉 Chuyển đổi giọng nói AI giống người thật thành công! Bạn có thể bật nghe thử hoặc bấm chuột phải/click dấu 3 chấm để tải file MP3 về máy:";
+                resultText.innerText = "🎉 Chuyển đổi giọng nói AI thành công! Bạn có thể bật nghe thử hoặc click dấu 3 chấm để tải file MP3 về máy:";
                 audioBox.classList.remove('d-none');
-                player.play(); // Tự động phát nhạc khi tải xong
+                
+                player.load(); // Buộc trình duyệt nạp lại luồng âm thanh mới từ blob để tránh lỗi đơ 0:00
+                player.play().catch(err => console.log("Chặn tự động phát từ trình duyệt: ", err));
             } else { 
-                resultText.innerText = "❌ Lỗi khi kết nối với API Edge-TTS để tạo giọng nói."; 
+                resultText.innerText = "❌ Lỗi khi kết nối với API để tạo giọng nói."; 
             }
         } catch(e) {
-            resultText.innerText = "❌ Lỗi hệ thống ngắt kết nối ngầm khi tạo file âm thanh.";
+            resultText.innerText = "❌ Có lỗi xảy ra trong quá trình xử lý luồng dữ liệu âm thanh trên server.";
         } finally {
             btnTts.disabled = false;
             btnTts.innerText = "🔊 Chuyển thành Giọng đọc MP3";
