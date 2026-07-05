@@ -35,11 +35,18 @@ def save_data(data):
     with open('data.json', 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
 
-# 🏠 ROUTE TRANG CHỦ
+# 🏠 ROUTE TRANG CHỦ & ĐĂNG NHẬP
 @app.route('/')
 def index():
     if not session.get('username'):
         return render_template('index.html', show_login=True, is_register=False)
+    return redirect(url_for('dashboard'))
+
+# 📊 ROUTE DASHBOARD (KHÔNG GIAN LÀM VIỆC SAU KHI LOGGED IN)
+@app.route('/dashboard')
+def dashboard():
+    if not session.get('username'):
+        return redirect(url_for('index'))
     
     username = session['username']
     data = load_data()
@@ -49,44 +56,43 @@ def index():
     
     return render_template('index.html', show_login=False, username=username, videos=user_videos, tools=user_tools)
 
-# 🔑 CHỨC NĂNG ĐĂNG KÝ (ĐÃ THÊM Ô XÁC NHẬN MẬT KHẨU)
+# 🔑 CHỨC NĂNG ĐĂNG KÝ
 @app.route('/register', methods=['GET', 'POST'])
 def register():
     if request.method == 'GET':
         return render_template('index.html', show_login=True, is_register=True)
     
-    username = request.form.get('username').strip()
-    password = request.form.get('password').strip()
-    confirm_password = request.form.get('confirm_password').strip() # Lấy ô xác nhận mật khẩu
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
+    confirm_password = request.form.get('confirm_password', '').strip()
     
     if not username or not password or not confirm_password:
         return render_template('index.html', show_login=True, is_register=True, error="Không được để trống thông tin!")
     
-    # Kiểm tra xem 2 mật khẩu nhập vào có trùng khớp không
     if password != confirm_password:
-        return render_template('index.html', show_login=True, is_register=True, error="Mật khẩu xác nhận không khớp! Vui lòng nhập lại.")
+        return render_template('index.html', show_login=True, is_register=True, error="Mật khẩu xác nhận không khớp!")
     
     data = load_data()
     if username in data['users']:
-        return render_template('index.html', show_login=True, is_register=True, error="Tài khoản này đã tồn tại rồi!")
+        return render_template('index.html', show_login=True, is_register=True, error="Tài khoản đã tồn tại!")
     
     data['users'][username] = password
     data['videos'][username] = []
     data['tools'][username] = []
     save_data(data)
     
-    return render_template('index.html', show_login=True, is_register=False, success="Đăng ký thành công! Hãy đăng nhập nhé.")
+    return render_template('index.html', show_login=True, is_register=False, success="Đăng ký thành công! Hãy đăng nhập.")
 
 # 🔑 CHỨC NĂNG ĐĂNG NHẬP THƯỜNG
 @app.route('/login', methods=['POST'])
 def login():
-    username = request.form.get('username').strip()
-    password = request.form.get('password').strip()
+    username = request.form.get('username', '').strip()
+    password = request.form.get('password', '').strip()
     
     data = load_data()
     if username in data['users'] and data['users'][username] == password:
         session['username'] = username
-        return redirect(url_for('index'))
+        return redirect(url_for('dashboard'))
     else:
         return render_template('index.html', show_login=True, is_register=False, error="Sai tài khoản hoặc mật khẩu!")
 
@@ -110,7 +116,7 @@ def google_callback():
                 if email not in data['tools']: data['tools'][email] = []
                 save_data(data)
             session['username'] = email
-            return redirect(url_for('index'))
+            return redirect(url_for('dashboard'))
     except Exception as e:
         print(f"Lỗi Google Auth: {e}")
     return redirect(url_for('index'))
@@ -120,7 +126,7 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ API TTS NÂNG CẤP (ĐÃ SỬA LỖI TRỐNG FILE VÀ KHÔNG PHÁT ĐƯỢC AUDIO)
+# 🎙️ API TTS SỬA LỖI ĐỌC FILE VÀ HIỂN THỊ THỜI GIAN CHUẨN ĐÉT
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -134,32 +140,29 @@ def text_to_speech():
         return jsonify({"success": False, "error": "Văn bản trống"})
     
     try:
-        # Tạo tên file tạm duy nhất dựa theo session người dùng để tránh trùng lặp
-        user_id = session.get('username').split('@')[0]
-        output_filename = f"output_{user_id}.mp3"
+        # Lưu file tạm trên đĩa cục bộ server Render để đồng bộ luồng tải âm thanh
+        output_filename = "temp_voice_output.mp3"
         
-        # Sử dụng hàm hàm lưu trực tiếp (.save) bất đồng bộ chính thống của Edge-TTS
-        async def generate_audio():
+        async def save_audio():
             communicate = edge_tts.Communicate(text, voice)
             await communicate.save(output_filename)
 
-        # Khởi chạy luồng bất đồng bộ độc lập để tải toàn bộ file về server dữ liệu
+        # Kích hoạt Event Loop xử lý bất đồng bộ trong môi trường đồng bộ Flask
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-        loop.run_until_complete(generate_audio())
+        loop.run_until_complete(save_audio())
         loop.close()
         
-        # Đọc ngược dữ liệu từ file vừa kết xuất vào RAM để trả về giao diện
         if os.path.exists(output_filename):
             with open(output_filename, "rb") as f:
-                audio_data = f.read()
+                audio_bytes = f.read()
             
-            # Xóa file tạm ngay lập tức sau khi đọc xong để dọn dẹp ổ đĩa Render
+            # Xóa file tạm ngay sau khi nạp xong vào RAM để giải phóng ổ đĩa
             os.remove(output_filename)
             
-            return send_file(io.BytesIO(audio_data), mimetype='audio/mp3', as_attachment=False)
+            return send_file(io.BytesIO(audio_bytes), mimetype='audio/mp3', as_attachment=False)
         else:
-            return jsonify({"success": False, "error": "Không thể tạo file âm thanh."})
+            return jsonify({"success": False, "error": "Lỗi khởi tạo tệp âm thanh từ hệ thống"})
             
     except Exception as e:
         return jsonify({"success": False, "error": str(e)})
@@ -172,11 +175,10 @@ def translate_text():
     
     req_data = request.get_json()
     text = req_data.get('text', '')
-    source_lang = req_data.get('source', 'auto') # Nhận ngôn ngữ gốc linh hoạt (mặc định: tự phát hiện)
-    target_lang = req_data.get('lang', 'vi')     # Nhận ngôn ngữ cần dịch sang
+    source_lang = req_data.get('source', 'auto')
+    target_lang = req_data.get('lang', 'vi')
     
     try:
-        # Cập nhật source_lang linh động để dịch được cả ngoại ngữ -> Việt và Việt -> ngoại ngữ
         translated = GoogleTranslator(source=source_lang, target=target_lang).translate(text)
         return jsonify({"success": True, "result": translated})
     except Exception as e:
@@ -196,7 +198,7 @@ def add_video():
         "drive_link": request.form.get('drive_link')
     })
     save_data(data)
-    return redirect(url_for('index'))
+    return redirect(url_for('dashboard'))
 
 @app.route('/add_tool', methods=['POST'])
 def add_tool():
@@ -210,7 +212,7 @@ def add_tool():
         "note": request.form.get('note')
     })
     save_data(data)
-    return redirect(url_for('index'))
+    return redirect(url_for('dashboard'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
