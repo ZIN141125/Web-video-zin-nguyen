@@ -3,4 +3,5 @@ gunicorn
 deep-translator==1.11.4
 Authlib==1.3.1
 requests==2.31.0
-
+edge-tts
+asyncio
