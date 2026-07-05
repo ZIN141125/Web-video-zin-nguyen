@@ -133,7 +133,7 @@ def logout():
     return redirect(url_for('index'))
 
 
-# 🎙️ ROUTE API TTS CHIA ĐOẠN ĐỘC LẬP - TỐI ƯU CHO KỊCH BẢN TRÊN 3000 TỪ & GIỌNG ĐỌC DÀI
+# 🎙️ ROUTE API TTS CHIA ĐOẠN ĐỘC LẬP - SỬA LỖI ĐỒNG BỘ GIỌNG ĐỌC CHI TIẾT
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -142,7 +142,17 @@ def text_to_speech():
     try:
         req_data = request.get_json() or {}
         raw_text = req_data.get('text', '')
-        voice = req_data.get('voice', 'vi-VN-HoaiNamNeural')
+        
+        # 🎙️ ÉP ĐỒNG BỘ GIỌNG ĐỌC: Kiểm tra chặt chẽ chuỗi Front-end gửi lên
+        input_voice = str(req_data.get('voice', '')).strip()
+        
+        # Thiết lập map giọng đọc chính xác để tránh Front-end truyền sai chuỗi định dạng
+        if 'NamMinh' in input_voice or 'namminh' in input_voice.lower():
+            voice = 'vi-VN-NamMinhNeural'
+        elif 'MaiPhuong' in input_voice or 'maiphuong' in input_voice.lower() or 'mai' in input_voice.lower():
+            voice = 'vi-VN-MaiPhuongNeural'
+        else:
+            voice = 'vi-VN-HoaiNamNeural' # Mặc định nếu không khớp hoặc lỗi truyền tin
         
         # 🧼 Bước 1: Làm sạch văn bản kịch bản đầu vào
         clean_lines = []
@@ -155,7 +165,7 @@ def text_to_speech():
         if not full_text:
             return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc không hợp lệ!"})
 
-        # 🧩 Bước 2: Chia nhỏ kịch bản dài thành các đoạn an toàn (~200-250 từ/đoạn) dựa trên dấu ngắt câu
+        # 🧩 Bước 2: Chia nhỏ kịch bản dài thành các đoạn an toàn (~200 từ/đoạn) dựa trên dấu ngắt câu
         words = full_text.split()
         chunks = []
         current_chunk = []
@@ -193,7 +203,8 @@ def text_to_speech():
                         chunk_bytes = bytearray()
                         
                         # Đọc trực tiếp luồng byte dữ liệu thô (audio chunk bytes) truyền về từ Microsoft
-                        async for chunk in communicate.stream():
+                        async_stream = communicate.stream()
+                        async for chunk in async_stream:
                             if chunk["type"] == "audio":
                                 chunk_bytes.extend(chunk["data"])
                         
@@ -221,13 +232,13 @@ def text_to_speech():
                 os.remove(final_output_path)
             return jsonify({
                 "success": False, 
-                "error": "Không thể kết xuất dữ liệu âm thanh kịch bản dài. Server Microsoft TTS từ chối kết nối. Hãy thử lại sau vài giây hoặc đổi sang giọng đọc khác!"
+                "error": f"Không thể kết xuất dữ liệu âm thanh kịch bản dài bằng giọng {voice}. Server Microsoft TTS từ chối kết nối. Hãy thử lại sau vài giây hoặc đổi sang giọng đọc khác!"
             })
 
         # Trả về URL dẫn đến file audio tĩnh kèm token thời gian thực (mtime) để buộc trình duyệt xóa cache file cũ
         return jsonify({
             "success": True, 
-            "text": f"Đã xử lý thành công {len(chunks)} phân đoạn kịch bản dài.",
+            "text": f"Đã xử lý thành công {len(chunks)} phân đoạn kịch bản dài bằng giọng đọc {voice}.",
             "audio_url": f"/static/audio/{final_filename}?v={os.path.getmtime(final_output_path)}"
         })
         
