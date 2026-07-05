@@ -19,6 +19,10 @@
     {% if show_login %}
     <div class="card p-4 login-container">
         {% if is_register %}
+        <div class="mb-3">
+    <label class="form-label fw-bold">Xác nhận mật khẩu</label>
+    <input type="password" name="confirm_password" class="form-control" placeholder="Nhập lại mật khẩu để xác nhận..." required>
+</div>
             <h3 class="fw-bold text-center text-success mb-3">📝 ĐĂNG KÝ TÀI KHOẢN</h3>
             <p class="text-muted text-center small">Tạo tài khoản cá nhân để quản lý dự án video của bạn</p>
         {% else %}
