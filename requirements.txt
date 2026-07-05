@@ -2,3 +2,5 @@ Flask
 gunicorn 
 deep_translator
 gTTS
+Authlib==1.3.1
+requests==2.31.0
