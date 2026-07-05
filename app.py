@@ -3,6 +3,7 @@ import json
 import io
 import asyncio
 import re
+import threading  # <--- Thêm thư viện xử lý đa luồng độc lập để tránh block server
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
@@ -11,7 +12,7 @@ import edge_tts  # <--- Thêm thư viện edge-tts xử lý giọng đọc con n
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
 
-# 📂 CẤU HÌNH THƯ MỤC LƯU TRỮ AUDIO MP3 TĨNH
+# 📂 CẤU HÌCH THƯ MỤC LƯU TRỮ AUDIO MP3 TĨNH
 STATIC_AUDIO_FOLDER = os.path.join(os.getcwd(), 'static', 'audio')
 os.makedirs(STATIC_AUDIO_FOLDER, exist_ok=True)
 
@@ -131,7 +132,7 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 🎙️ BƯỚC 1: ROUTE API TTS ĐÃ ĐƯỢC CHỈNH SỬA TOÀN DIỆN VÀ CHẠY ỔN ĐỊNH
+# 🎙️ ROUTE API TTS ĐÃ ĐƯỢC CHỈNH SỬA CHẠY TRÊN LUỒNG CÁCH LY AN TOÀN
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
@@ -146,7 +147,6 @@ def text_to_speech():
         clean_lines = []
         for line in raw_text.split('\n'):
             line_str = line.strip()
-            # Bỏ qua dòng trống hoặc dòng chứa chuỗi ký tự phân tách đặc biệt
             if line_str and not re.match(r'^[-\*_ ]+$', line_str):
                 clean_lines.append(line_str)
         
@@ -155,33 +155,29 @@ def text_to_speech():
         if not text:
             return jsonify({"success": False, "error": "Văn bản kịch bản trống hoặc chứa ký tự rác không hợp lệ!"})
             
-        # Xác định tên file đầu ra dựa trên tài khoản để tránh ghi đè dồn dập giữa các phiên làm việc
+        # Xác định tên file đầu ra dựa trên tài khoản để tránh ghi đè chéo
         safe_username = "".join([c for c in session['username'] if c.isalnum()])
         filename = f"audio_{safe_username}.mp3"
         output_path = os.path.join(STATIC_AUDIO_FOLDER, filename)
         
-        # Hàm xử lý chuyển đổi bất tuần tự của thư viện Edge-TTS
-        async def generate_voice_file():
-            communicate = edge_tts.Communicate(text, voice)
-            await communicate.save(output_path)
-            
-        # 🌟 KHẮC PHỤC XUNG ĐỘT EVENT LOOP TRÊN RENDER/GUNICORN
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-        if loop.is_running():
-            # Nếu loop đang chạy (môi trường server bất đồng bộ phức tạp), ép tiến trình chạy đồng bộ an toàn
-            future = asyncio.run_coroutine_threadsafe(generate_voice_file(), loop)
-            future.result() # Đợi cho tới khi tạo xong file
-        else:
-            loop.run_until_complete(generate_voice_file())
-        
-        # Kiểm tra sự tồn tại và tính hợp lệ của file sau khi xuất bản
+        # Hàm Worker độc lập: Tự cấp một Event Loop mới hoàn toàn để tải âm thanh từ Microsoft
+        def run_async_tts():
+            new_loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(new_loop)
+            try:
+                communicate = edge_tts.Communicate(text, voice)
+                new_loop.run_until_complete(communicate.save(output_path))
+            finally:
+                new_loop.close()
+
+        # Khởi chạy tiểu trình độc lập (Thread) cách ly hoàn toàn với luồng xử lý chính của WSGI/Render
+        tts_thread = threading.Thread(target=run_async_tts)
+        tts_thread.start()
+        tts_thread.join() # Ép tiến trình Flask đợi cho đến khi Thread này ghi xong file âm thanh mới đi tiếp
+
+        # Kiểm tra sự tồn tại và dung lượng file sau khi tiểu trình chạy xong
         if not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
-            return jsonify({"success": False, "error": "Hệ thống Edge-TTS không xuất được dữ liệu âm thanh hợp lệ."})
+            return jsonify({"success": False, "error": "Hệ thống Edge-TTS không tải được dữ liệu âm thanh. Vui lòng kiểm tra lại đường truyền hoặc kịch bản."})
 
         # Trả về tín hiệu thành công kèm URL dẫn đến file audio tĩnh
         return jsonify({
