@@ -3,20 +3,21 @@ import json
 import io
 import asyncio
 import re
-import threading  # <--- Thêm thư viện xử lý đa luồng độc lập để cách ly tiến trình asyncio
+import time
+import threading  # <--- Xử lý đa luồng độc lập cách ly tiến trình asyncio
 from flask import Flask, render_template, request, redirect, url_for, jsonify, send_from_directory, session, flash
 from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
-import edge_tts  # <--- Thêm thư viện edge-tts xử lý giọng đọc con người
+import edge_tts  # <--- Thư viện edge-tts xử lý giọng đọc con người
 
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
 
-# 📂 CẤU HÌCH THƯ MỤC LƯ LƯU TRỮ AUDIO MP3 TĨNH
+# 📂 CẤU HÌCH THƯ MỤC LƯU TRỮ AUDIO MP3 TĨNH
 STATIC_AUDIO_FOLDER = os.path.join(os.getcwd(), 'static', 'audio')
 os.makedirs(STATIC_AUDIO_FOLDER, exist_ok=True)
 
-# 🔑 CẤU HÌNH GOOGLE OAUTH
+# 🔑 CẤU HÌCH GOOGLE OAUTH
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
 
@@ -133,35 +134,30 @@ def logout():
     return redirect(url_for('index'))
 
 
-# 🎙️ ROUTE API TTS - ĐÓN ĐẦU VÀ SỬA LỖI TRUYỀN THAM SỐ TỪ FRONT-END
+# 🎙️ ROUTE API TTS - ÉP CỐ ĐỊNH GIỌNG ĐỌC & TRÁNH BLOCK IP BẰNG CƠ CHẾ COOLDOWN
 @app.route('/api/tts', methods=['POST'])
 def text_to_speech():
     if not session.get('username'): 
         return jsonify({"success": False, "error": "Chưa đăng nhập hệ thống!"})
     
     try:
-        # ĐÓN ĐẦU: Nhận cả JSON lẫn Form data phòng trường hợp Front-end gửi sai kiểu dữ liệu
         req_data = request.get_json() or {}
         if not req_data:
             req_data = request.form
             
         raw_text = req_data.get('text', '')
-        
-        # Lấy giá trị giọng đọc và ép về chữ thường để so sánh
         input_voice = str(req_data.get('voice', '')).strip().lower()
         
-        # IN LOG KIỂM TRA: Xem Front-end thực sự đang gửi cái gì lên máy chủ Render
-        print(f"--- [DEBUG TTS] Văn bản nhận được: {len(raw_text)} ký tự | Giọng đọc nhận từ Front-end: '{input_voice}' ---")
-        
-        # 🎙️ BỘ LỌC ĐÓN ĐẦU: Nhận diện theo từ khóa, chấp nhận cả value từ thẻ option là tên gốc hoặc tên rút gọn
+        # 🎙️ ÉP CHÍNH XÁC GIỌNG ĐỌC: Không dùng cơ chế tự chuyển đổi giọng cứu cánh nữa!
         if 'namminh' in input_voice or 'nam minh' in input_voice or 'minh' in input_voice:
             voice = 'vi-VN-NamMinhNeural'
+            display_name = "Nam Minh"
         elif 'maiphuong' in input_voice or 'mai phuong' in input_voice or 'mai' in input_voice or 'phuong' in input_voice:
             voice = 'vi-VN-MaiPhuongNeural'
+            display_name = "Mai Phương"
         else:
-            voice = 'vi-VN-HoaiNamNeural' # Dự phòng nếu Front-end không gửi gì hoặc gửi rác
-            
-        print(f"--- [DEBUG TTS] Hệ thống quyết định chọn giọng: {voice} ---")
+            voice = 'vi-VN-HoaiNamNeural'
+            display_name = "Hoài Nam"
         
         # 🧼 Bước 1: Làm sạch văn bản kịch bản đầu vào
         clean_lines = []
@@ -196,8 +192,13 @@ def text_to_speech():
         final_filename = f"audio_{safe_username}.mp3"
         final_output_path = os.path.join(STATIC_AUDIO_FOLDER, final_filename)
 
-        # 🔄 Bước 3: Hàm Worker gộp trực tiếp luồng byte âm thanh trên RAM
+        # Biến trạng thái theo dõi tiến trình
+        is_generation_successful = False
+        error_message = ""
+
+        # 🔄 Bước 3: Hàm Worker tải luồng dữ liệu byte âm thanh độc lập kèm cơ chế Cooldown chống Block
         def run_split_tts():
+            nonlocal is_generation_successful, error_message
             new_loop = asyncio.new_event_loop()
             asyncio.set_event_loop(new_loop)
             
@@ -205,45 +206,67 @@ def text_to_speech():
                 combined_audio_data = bytearray()
                 
                 async def fetch_chunks():
-                    nonlocal combined_audio_data
-                    for chunk_text in chunks:
-                        communicate = edge_tts.Communicate(chunk_text, voice)
-                        chunk_bytes = bytearray()
+                    nonlocal combined_audio_data, is_generation_successful, error_message
+                    
+                    for idx, chunk_text in enumerate(chunks):
+                        print(f"--- [TTS PROCESSING] Đang tải đoạn {idx+1}/{len(chunks)} bằng giọng: {voice} ---")
                         
-                        async_stream = communicate.stream()
-                        async for chunk in async_stream:
-                            if chunk["type"] == "audio":
-                                chunk_bytes.extend(chunk["data"])
-                        
-                        combined_audio_data.extend(chunk_bytes)
+                        try:
+                            communicate = edge_tts.Communicate(chunk_text, voice)
+                            chunk_bytes = bytearray()
+                            
+                            async_stream = communicate.stream()
+                            async for chunk in async_stream:
+                                if chunk["type"] == "audio":
+                                    chunk_bytes.extend(chunk["data"])
+                            
+                            # Kiểm tra nếu Microsoft từ chối trả kết quả ở phân đoạn này
+                            if not chunk_bytes:
+                                error_message = f"Máy chủ Microsoft đột ngột từ chối phản hồi ở phân đoạn {idx+1} của giọng {display_name}."
+                                return
+                                
+                            combined_audio_data.extend(chunk_bytes)
+                            
+                            # ⏱️ CƠ CHẾ COOLDOWN GIÃN CÁCH: Nếu chưa phải đoạn cuối, nghỉ 1.5s để qua mặt bộ lọc Rate Limit
+                            if idx < len(chunks) - 1:
+                                await asyncio.sleep(1.5)
+                                
+                        except Exception as segment_error:
+                            error_message = f"Lỗi phát sinh tại đoạn {idx+1}: {str(segment_error)}"
+                            return
+                            
+                    is_generation_successful = True
                 
                 new_loop.run_until_complete(fetch_chunks())
                 
-                if combined_audio_data:
+                # Ghi dữ liệu thô tổng hợp nếu toàn bộ chuỗi phân đoạn tải thành công hoàn toàn
+                if is_generation_successful and combined_audio_data:
                     with open(final_output_path, "wb") as f:
                         f.write(combined_audio_data)
                         
             finally:
                 new_loop.close()
 
-        # Thực thi trong một tiểu trình Thread độc lập
+        # Khởi chạy trong tiểu trình Thread cách ly hoàn toàn với Render WSGI
         tts_thread = threading.Thread(target=run_split_tts)
         tts_thread.start()
-        tts_thread.join(timeout=300)
+        tts_thread.join(timeout=360) # Chờ tối đa 6 phút cho kịch bản dài 2000-3000 từ
 
-        # Kiểm tra tính toàn vẹn và dung lượng thực tế của file MP3 đầu ra
-        if not os.path.exists(final_output_path) or os.path.getsize(final_output_path) == 0:
+        # Nếu quá trình sinh file thất bại, xóa file rác cũ và trả lỗi trực tiếp về màn hình
+        if not is_generation_successful or not os.path.exists(final_output_path) or os.path.getsize(final_output_path) == 0:
             if os.path.exists(final_output_path):
                 os.remove(final_output_path)
+            
+            detail_err = error_message if error_message else "Kết nối mạng đến Microsoft bị gián đoạn."
             return jsonify({
                 "success": False, 
-                "error": f"Không thể kết xuất dữ liệu âm thanh bằng giọng {voice}. Vui lòng thử lại!"
+                "error": f"❌ Lỗi giọng đọc {display_name}: {detail_err} Vui lòng thử lại sau vài giây!"
             })
 
-        # Trả về URL dẫn đến file audio tĩnh kèm token thời gian thực (mtime) để buộc trình duyệt xóa cache file cũ
+        # Trả về URL dẫn đến file audio tĩnh chuẩn giọng người dùng chọn
         return jsonify({
             "success": True, 
-            "text": f"Đã xử lý kịch bản dài thành công bằng giọng đọc {voice}.",
+            "text": f"Đã kết xuất thành công toàn bộ văn bản bằng giọng đọc: {display_name}.",
             "audio_url": f"/static/audio/{final_filename}?v={os.path.getmtime(final_output_path)}"
         })
         
