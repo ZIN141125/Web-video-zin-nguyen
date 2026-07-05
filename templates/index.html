@@ -265,7 +265,7 @@
         }
     }
 
-    // 🎙️ SỬA BƯỚC 3: HÀM TTS HOÀN CHỈNH - GỌI API EDGE-TTS, BĂM NHỎ CÂU VÀ GHÉP FILE MP3 TRÊN TRÌNH DUYỆT
+    // 🎙️ ĐÃ SỬA BƯỚC 2: HÀM TTS GỌI THẲNG XỬ LÝ TOÀN DIỆN QUA BACKEND
     async function executeTTS() {
         const rawText = document.getElementById('ai-text').value;
         const text = rawText && rawText.trim ? rawText.trim() : rawText;
@@ -279,69 +279,41 @@
         const audioBox = document.getElementById('audio-player-box');
         
         resultBox.classList.remove('d-none');
-        resultText.innerText = "⏳ Trợ lý AI đang mã hóa kịch bản và tải dữ liệu âm thanh con người, vui lòng đợi...";
+        resultText.innerText = "⏳ Hệ thống đang chuyển mã kịch bản sang giọng nói AI, vui lòng đợi trong giây lát...";
         audioBox.classList.add('d-none');
         btnTts.disabled = true;
         btnTts.innerText = "⏳ Đang kết xuất Audio...";
 
         try {
-            // 1. Gửi văn bản qua cổng API xác thực của Backend Flask
+            // Gửi dữ liệu kịch bản lên route Backend Flask để xử lý tập trung
             const res = await fetch('/api/tts', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({text: text})
+                body: JSON.stringify({ text: text, voice: selectedVoice })
             });
             const data = await res.json();
             
-            if(!data.success) {
-                resultText.innerText = "❌ Lỗi xác thực kịch bản từ Server: " + data.error;
-                return;
-            }
-
-            // 2. Băm nhỏ văn bản theo các dấu ngắt câu để tránh quá tải đường truyền
-            const chunks = data.text.split(/(?<=[.!?;\n])\s+/).filter(c => c.trim().length > 0);
-            const audioBlobs = [];
-
-            // 3. Tiến hành gửi yêu cầu tải luồng dữ liệu Edge-TTS cho từng phân đoạn câu
-            for (let i = 0; i < chunks.length; i++) {
-                resultText.innerText = `⏳ Đang xử lý giọng đọc AI con người: Phân đoạn ${i + 1}/${chunks.length}...`;
+            if(data.success && data.audio_url) {
+                const player = document.getElementById('audio-player');
+                const downloadLink = document.getElementById('download-audio-link');
                 
-                // Endpoint cổng API tự do lấy file âm thanh Edge-TTS chuẩn định dạng
-                const ttsUrl = `https://api.tts.quest/v1/edge/?text=${encodeURIComponent(chunks[i])}&voice=${selectedVoice}`;
+                // Thêm timestamp (?t=...) để chống hiện tượng dính bộ nhớ đệm (cache) khi bạn bấm tạo nhiều lần
+                const finalAudioUrl = data.audio_url + '?t=' + new Date().getTime();
                 
-                const audioRes = await fetch(ttsUrl);
-                if (audioRes.ok) {
-                    const blob = await audioRes.blob();
-                    if (blob.size > 100) {
-                        audioBlobs.push(blob);
-                    }
-                }
+                player.src = finalAudioUrl;
+                downloadLink.href = finalAudioUrl;
+                
+                resultText.innerText = "🎉 Chuyển đổi giọng nói AI giống người thật thành công! Bạn có thể nghe thử hoặc tải file MP3 về máy:";
+                audioBox.classList.remove('d-none');
+                
+                player.load();
+                player.play().catch(err => console.log("Hệ thống chặn tự động phát: ", err));
+            } else {
+                resultText.innerText = "❌ Lỗi từ máy chủ: " + (data.error || "Không thể kết xuất âm thanh kịch bản.");
             }
-
-            if (audioBlobs.length === 0) {
-                throw new Error("Không lấy được dữ liệu âm thanh từ hệ thống phân tách.");
-            }
-
-            // 4. THỰC HIỆN GHÉP KHỐI (MERGE BLOBS) THÀNH FILE AUDIO MP3 DUY NHẤT
-            const finalAudioBlob = new Blob(audioBlobs, { type: 'audio/mp3' });
-            const finalAudioUrl = URL.createObjectURL(finalAudioBlob);
-            
-            // 5. Đưa đường dẫn cục bộ vào trình phát Audio và thẻ Download file
-            const player = document.getElementById('audio-player');
-            const downloadLink = document.getElementById('download-audio-link');
-            
-            player.src = finalAudioUrl;
-            downloadLink.href = finalAudioUrl; // Đường link để tải file MP3 về máy
-            
-            resultText.innerText = "🎉 Kết xuất giọng đọc AI con người thành công! Bạn có thể nghe thử trực tiếp hoặc bấm nút để tải file MP3 xuống máy tính/điện thoại:";
-            audioBox.classList.remove('d-none');
-            
-            player.load();
-            player.play().catch(err => console.log("Hệ thống chặn tự động phát âm thanh đầu ra: ", err));
-
         } catch(e) {
             console.error(e);
-            resultText.innerText = "❌ Đã xảy ra lỗi trong quá trình bóc tách chuỗi câu hoặc ghép luồng âm thanh Edge-TTS.";
+            resultText.innerText = "❌ Thất bại: Không thể đồng bộ luồng âm thanh tĩnh với máy chủ Backend.";
         } finally {
             btnTts.disabled = false;
             btnTts.innerText = "🔊 Chuyển Thành Giọng Đọc MP3";
