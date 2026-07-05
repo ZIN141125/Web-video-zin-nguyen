@@ -265,31 +265,42 @@
         }
     }
 
-    // 🎙️ ĐÃ SỬA BƯỚC 2: HÀM TTS GỌI THẲNG XỬ LÝ TOÀN DIỆN QUA BACKEND
+    // 🎙️ VÁ LỖI HOÀN CHỈNH: HÀM TTS TỰ ĐỘNG LỌC BỎ KÝ TỰ ĐẶC BIỆT (---) TRƯỚC KHI GỬI LÊN BACKEND
     async function executeTTS() {
         const rawText = document.getElementById('ai-text').value;
-        const text = rawText && rawText.trim ? rawText.trim() : rawText;
+        if(!rawText || !rawText.trim()) { alert('Vui lòng nhập văn bản trước!'); return; }
+        
+        // 🌟 BỘ LỌC FRONT-END: Tách dòng, bỏ qua các dòng trống hoặc dòng chứa toàn dấu gạch rác (---, ***, ___)
+        const cleanLines = rawText.split('\n')
+            .map(line => line.trim())
+            .filter(line => line.length > 0 && !/^[-\*_ ]+$/.test(line));
+            
+        // Ghép lại thành văn bản sạch hoàn toàn để truyền tải lên máy chủ
+        const cleanText = cleanLines.join('\n');
+        
+        if(!cleanText) { 
+            alert('Kịch bản không chứa văn bản hợp lệ để đọc (chỉ có các ký tự phân tách kịch bản)!'); 
+            return; 
+        }
+
         const selectedVoice = document.getElementById('tts-voice').value;
         const btnTts = document.getElementById('btn-tts');
-        
-        if(!text) { alert('Vui lòng nhập văn bản trước!'); return; }
-        
         const resultBox = document.getElementById('ai-result-box');
         const resultText = document.getElementById('ai-result-text');
         const audioBox = document.getElementById('audio-player-box');
         
         resultBox.classList.remove('d-none');
-        resultText.innerText = "⏳ Hệ thống đang chuyển mã kịch bản sang giọng nói AI, vui lòng đợi trong giây lát...";
+        resultText.innerText = "⏳ Hệ thống đang lọc sạch kịch bản và chuyển mã sang giọng nói AI, vui lòng đợi...";
         audioBox.classList.add('d-none');
         btnTts.disabled = true;
         btnTts.innerText = "⏳ Đang kết xuất Audio...";
 
         try {
-            // Gửi dữ liệu kịch bản lên route Backend Flask để xử lý tập trung
+            // Gửi văn bản ĐÃ LỌC SẠCH lên route Backend Flask để xử lý tập trung
             const res = await fetch('/api/tts', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ text: text, voice: selectedVoice })
+                body: JSON.stringify({ text: cleanText, voice: selectedVoice })
             });
             const data = await res.json();
             
@@ -297,7 +308,7 @@
                 const player = document.getElementById('audio-player');
                 const downloadLink = document.getElementById('download-audio-link');
                 
-                // Thêm timestamp (?t=...) để chống hiện tượng dính bộ nhớ đệm (cache) khi bạn bấm tạo nhiều lần
+                // Thêm timestamp (?t=...) để chống hiện tượng dính bộ nhớ đệm (cache browser) khi tạo nhiều lần
                 const finalAudioUrl = data.audio_url + '?t=' + new Date().getTime();
                 
                 player.src = finalAudioUrl;
@@ -309,7 +320,7 @@
                 player.load();
                 player.play().catch(err => console.log("Hệ thống chặn tự động phát: ", err));
             } else {
-                resultText.innerText = "❌ Lỗi từ máy chủ: " + (data.error || "Không thể kết xuất âm thanh kịch bản.");
+                resultText.innerHTML = "❌ <strong class='text-danger'>Lỗi từ máy chủ:</strong> " + (data.error || "Không thể kết xuất âm thanh kịch bản.");
             }
         } catch(e) {
             console.error(e);
