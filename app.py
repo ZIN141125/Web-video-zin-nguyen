@@ -9,6 +9,9 @@ from deep_translator import GoogleTranslator
 from authlib.integrations.flask_client import OAuth
 import edge_tts  # <--- Thêm thư viện edge-tts xử lý giọng đọc con người
 
+# 🚀 BƯỚC 2: IMPORT BLUEPRINT TỪ FILE RIÊNG CỦA BẠN
+from video_anh_ai import visual_ai_bp
+
 app = Flask(__name__)
 app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
 
@@ -16,7 +19,7 @@ app.secret_key = 'son_dep_trai_he_thong_da_nguoi_dung'
 STATIC_AUDIO_FOLDER = os.path.join(os.getcwd(), 'static', 'audio')
 os.makedirs(STATIC_AUDIO_FOLDER, exist_ok=True)
 
-# 🔑 CẤU HÌNH GOOGLE OAUTH
+# 🔑 CẤU HÌCH GOOGLE OAUTH
 GOOGLE_CLIENT_ID = os.environ.get('GOOGLE_CLIENT_ID')
 GOOGLE_CLIENT_SECRET = os.environ.get('GOOGLE_CLIENT_SECRET')
 
@@ -287,6 +290,11 @@ def add_tool():
     })
     save_data(data)
     return redirect(url_for('dashboard'))
+
+
+# 🚀 BƯỚC 2: ĐĂNG KÝ BLUEPRINT VÀO ĐỐI TƯỢNG APP TRƯỚC KHI CHẠY SERVER
+app.register_blueprint(visual_ai_bp)
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
