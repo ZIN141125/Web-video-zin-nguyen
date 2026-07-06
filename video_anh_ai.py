@@ -74,7 +74,7 @@ def generate_video():
 
         input_data = {
             "prompt": prompt,
-            "num_frames": 49 # Thời lượng khoảng 3-4 giây
+            "num_frames": 49
         }
 
         # Gọi mô hình LTX-Video mã nguồn mở
