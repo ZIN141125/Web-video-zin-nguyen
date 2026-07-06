@@ -92,6 +92,9 @@
             <button class="nav-link" id="ai-tab" data-bs-toggle="tab" data-bs-target="#ai-content" type="button">🚀 Xưởng Công cụ AI (Dịch & Giọng Nói)</button>
         </li>
         <li class="nav-item">
+            <button class="nav-link" id="visual-tab" data-bs-toggle="tab" data-bs-target="#visual-content" type="button">🎨 Xưởng Visual AI (Ảnh & Video)</button>
+        </li>
+        <li class="nav-item">
             <button class="nav-link" id="tool-tab" data-bs-toggle="tab" data-bs-target="#tool-content" type="button">🧰 Hộp Tài nguyên & Link</button>
         </li>
     </ul>
@@ -196,6 +199,50 @@
             </div>
         </div>
 
+        <div class="tab-pane fade" id="visual-content" role="tabpanel">
+            <div class="row">
+                <div class="col-md-5 mb-4">
+                    <div class="card p-4 shadow-sm">
+                        <h4 class="fw-bold text-primary mb-3">Sáng tạo Visual bằng AI</h4>
+                        
+                        <div class="mb-3">
+                            <label class="form-label fw-semibold">Ý tưởng / Kịch bản chi tiết (Prompt):</label>
+                            <textarea id="visual-prompt" class="form-control" rows="4" placeholder="Ví dụ tạo ảnh: Một phi hành gia cưỡi ngựa trên sao hỏa, phong cách điện ảnh cinematic...&#10;&#10;Ví dụ tạo video: Cảnh flycam từ trên cao quay bờ biển sóng vỗ lúc hoàng hôn..."></textarea>
+                        </div>
+                        
+                        <div class="p-3 bg-light rounded border mb-3">
+                            <h6 class="fw-bold text-success mb-2">⚙️ Cấu hình Tạo Ảnh</h6>
+                            <label class="form-label small fw-semibold">Tỷ lệ khung hình (Aspect Ratio):</label>
+                            <select id="img-ratio" class="form-select form-select-sm">
+                                <option value="1:1" selected>1:1 (Ảnh vuông Avatar)</option>
+                                <option value="16:9">16:9 (Ảnh ngang Youtube)</option>
+                                <option value="9:16">9:16 (Ảnh dọc TikTok/Shorts)</option>
+                            </select>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button id="btn-gen-img" onclick="generateVisualAI('image')" class="btn btn-success fw-bold">🎨 Bắt Đầu Sinh Ảnh AI (Flux.1)</button>
+                            <button id="btn-gen-vid" onclick="generateVisualAI('video')" class="btn btn-primary fw-bold">🎬 Bắt Đầu Sinh Video AI (LTX-Video)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-7">
+                    <div class="card p-4 text-center d-flex align-items-center justify-content-center" style="min-height: 400px; background-color: #2b3035; color: #fff; border-radius: 12px;">
+                        <div id="visual-loading" class="d-none">
+                            <div class="spinner-border text-light mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                            <p class="fw-bold" id="visual-status-text">AI đang xử lý tác vụ đồ họa, vui lòng đợi trong giây lát...</p>
+                        </div>
+                        
+                        <div id="visual-preview-box" class="w-100">
+                            <p class="text-muted mb-0">📺 Kết quả hiển thị (Ảnh/Video) của Sơn sẽ xuất hiện tại đây sau khi tạo thành công</p>
+                            <div id="media-result-container" class="mt-3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="tab-pane fade" id="tool-content" role="tabpanel">
             <div class="row">
                 <div class="col-md-4 mb-4">
@@ -265,17 +312,15 @@
         }
     }
 
-    // 🎙️ VÁ LỖI HOÀN CHỈNH: HÀM TTS TỰ ĐỘNG LỌC BỎ KÝ TỰ ĐẶC BIỆT (---) TRƯỚC KHI GỬI LÊN BACKEND
+    // 🎙️ HÀM TTS CHUYỂN MÃ SANG GIỌNG NÓI
     async function executeTTS() {
         const rawText = document.getElementById('ai-text').value;
         if(!rawText || !rawText.trim()) { alert('Vui lòng nhập văn bản trước!'); return; }
         
-        // 🌟 BỘ LỌC FRONT-END: Tách dòng, bỏ qua các dòng trống hoặc dòng chứa toàn dấu gạch rác (---, ***, ___)
         const cleanLines = rawText.split('\n')
             .map(line => line.trim())
             .filter(line => line.length > 0 && !/^[-\*_ ]+$/.test(line));
             
-        // Ghép lại thành văn bản sạch hoàn toàn để truyền tải lên máy chủ
         const cleanText = cleanLines.join('\n');
         
         if(!cleanText) { 
@@ -296,7 +341,6 @@
         btnTts.innerText = "⏳ Đang kết xuất Audio...";
 
         try {
-            // Gửi văn bản ĐÃ LỌC SẠCH lên route Backend Flask để xử lý tập trung
             const res = await fetch('/api/tts', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
@@ -307,14 +351,12 @@
             if(data.success && data.audio_url) {
                 const player = document.getElementById('audio-player');
                 const downloadLink = document.getElementById('download-audio-link');
-                
-                // Thêm timestamp (?t=...) để chống hiện tượng dính bộ nhớ đệm (cache browser) khi tạo nhiều lần
                 const finalAudioUrl = data.audio_url + '?t=' + new Date().getTime();
                 
                 player.src = finalAudioUrl;
                 downloadLink.href = finalAudioUrl;
                 
-                resultText.innerText = "🎉 Chuyển đổi giọng nói AI giống người thật thành công! Bạn có thể nghe thử hoặc tải file MP3 về máy:";
+                resultText.innerText = "🎉 Chuyển đổi giọng nói AI thành công! Bạn có thể nghe thử hoặc tải file MP3 về máy:";
                 audioBox.classList.remove('d-none');
                 
                 player.load();
@@ -328,6 +370,74 @@
         } finally {
             btnTts.disabled = false;
             btnTts.innerText = "🔊 Chuyển Thành Giọng Đọc MP3";
+        }
+    }
+
+    // 🎨 HÀM XỬ LÝ GỌI API SINH ẢNH VÀ VIDEO TỪ BLUEPRINT
+    async function generateVisualAI(type) {
+        const prompt = document.getElementById('visual-prompt').value.trim();
+        if (!prompt) { alert('Vui lòng điền nội dung ý tưởng vào ô trống!'); return; }
+        
+        const btnImg = document.getElementById('btn-gen-img');
+        const btnVid = document.getElementById('btn-gen-vid');
+        const loadingBox = document.getElementById('visual-loading');
+        const statusText = document.getElementById('visual-status-text');
+        const resultContainer = document.getElementById('media-result-container');
+        
+        // Cập nhật giao diện khi đang xử lý tác vụ
+        btnImg.disabled = true;
+        btnVid.disabled = true;
+        loadingBox.classList.remove('d-none');
+        resultContainer.innerHTML = '';
+        
+        statusText.innerText = type === 'image' 
+            ? "⏳ Mô hình Siêu máy tính Flux đang vẽ ảnh phối cảnh cho bạn..." 
+            : "⏳ Hệ thống đang render hoạt cảnh và tạo chuỗi chuyển động Video AI...";
+            
+        const formData = new FormData();
+        formData.append('prompt', prompt);
+        if(type === 'image') {
+            formData.append('aspect_ratio', document.getElementById('img-ratio').value);
+        }
+
+        try {
+            const endpoint = type === 'image' ? '/api/generate-image' : '/api/generate-video';
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+            
+            loadingBox.classList.add('d-none');
+            
+            if (data.success && data.media_url) {
+                const finalMediaUrl = data.media_url + '?v=' + new Date().getTime();
+                
+                if (type === 'image') {
+                    resultContainer.innerHTML = `
+                        <img src="${finalMediaUrl}" class="img-fluid rounded shadow border border-light" style="max-height: 450px;" alt="AI Result">
+                        <div class="mt-3">
+                            <a href="${finalMediaUrl}" download="ai_art_son.png" class="btn btn-sm btn-success fw-bold">📥 Tải Ảnh Xuống Máy</a>
+                        </div>`;
+                } else {
+                    resultContainer.innerHTML = `
+                        <video controls autoplay loop class="w-100 rounded shadow border border-light" style="max-height: 450px;">
+                            <source src="${finalMediaUrl}" type="video/mp4">
+                        </video>
+                        <div class="mt-3">
+                            <a href="${finalMediaUrl}" download="ai_video_son.mp4" class="btn btn-sm btn-primary fw-bold">📥 Tải Video Xuống Máy</a>
+                        </div>`;
+                }
+            } else {
+                resultContainer.innerHTML = `<div class="alert alert-danger">❌ Lỗi từ AI Server: ${data.error || 'Quá trình khởi tạo thất bại.'}</div>`;
+            }
+        } catch (e) {
+            console.error(e);
+            loadingBox.classList.add('d-none');
+            resultContainer.innerHTML = `<div class="alert alert-danger">❌ Lỗi kết nối luồng API đến Máy chủ.</div>`;
+        } finally {
+            btnImg.disabled = false;
+            btnVid.disabled = false;
         }
     }
 </script>
